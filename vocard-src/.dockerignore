@@ -1,0 +1,10 @@
+# Never bake secrets or runtime data into the image - settings.json is
+# bind-mounted at runtime (see docker-compose.yml). local-patches.md Patch 30.
+settings.json
+.env
+last-session.json
+logs/
+stream_cache/
+__pycache__/
+.pytest_cache/
+.git/

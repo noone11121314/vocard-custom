@@ -1,0 +1,34 @@
+name: vocard-staging
+# Separate compose project (`name:` above) from the main docker-compose.yml's
+# "vocard" project, deliberately - `docker compose -f docker-compose.staging.yml
+# down` can never affect anything in the production project, even by accident.
+# Only this one service exists here; it attaches to the *existing* production
+# `vocard` network to reach the already-running lavalink/vocard-db/
+# invidious-companion/vocard-dashboard containers - nothing here duplicates
+# or restarts any of those. See docs/staging-deployment.md for the full
+# protocol this file is one piece of.
+networks:
+    vocard:
+        name: vocard
+        external: true
+services:
+    vocard-staging:
+        container_name: vocard-staging
+        environment:
+        - INVIDIOUS_COMPANION_URL=http://invidious-companion:8282
+        - INVIDIOUS_COMPANION_SECRET=${INVIDIOUS_COMPANION_SECRET}
+        - STREAM_CACHE_PORT=2334
+        - STREAM_CACHE_BASE_URL=http://vocard-staging:2334
+        - STREAM_CACHE_MAX_BYTES=1000000000
+        - STREAM_CACHE_DIR=/app/stream_cache
+        expose:
+        - 2334
+        image: vocard-patched:staging
+        networks:
+        - vocard
+        restart: "no"
+        volumes:
+        - ./settings.staging.json:/app/settings.json
+        - ./stream_cache-staging:/app/stream_cache
+        - ./logs-staging:/app/logs
+        - ./last-session-staging.json:/app/last-session.json

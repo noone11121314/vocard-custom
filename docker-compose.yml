@@ -1,0 +1,107 @@
+name: vocard
+networks:
+    vocard:
+        name: vocard
+services:
+    lavalink:
+        container_name: lavalink
+        environment:
+        - SERVER_PORT=2333
+        - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD}
+        expose:
+        - 2333
+        image: ghcr.io/lavalink-devs/lavalink:latest
+        networks:
+        - vocard
+        restart: unless-stopped
+        volumes:
+        - ./lavalink/application.yml:/opt/Lavalink/application.yml
+        - ./lavalink/plugins:/opt/Lavalink/plugins
+        - ./lavalink/logs:/opt/Lavalink/logs
+    vocard:
+        container_name: vocard
+        depends_on:
+            vocard-dashboard:
+                condition: service_healthy
+            vocard-db:
+                condition: service_healthy
+            invidious-companion:
+                condition: service_started
+        environment:
+        - INVIDIOUS_COMPANION_URL=http://invidious-companion:8282
+        - INVIDIOUS_COMPANION_SECRET=${INVIDIOUS_COMPANION_SECRET}
+        - STREAM_CACHE_PORT=2334
+        - STREAM_CACHE_BASE_URL=http://vocard:2334
+        - STREAM_CACHE_MAX_BYTES=5000000000
+        - STREAM_CACHE_DIR=/app/stream_cache
+        expose:
+        - 2334
+        image: vocard-patched:latest
+        networks:
+        - vocard
+        restart: unless-stopped
+        volumes:
+        - ./settings.json:/app/settings.json
+        - ./stream_cache:/app/stream_cache
+        - ./last-session.json:/app/last-session.json
+    invidious-companion:
+        container_name: invidious-companion
+        environment:
+        - SERVER_SECRET_KEY=${INVIDIOUS_COMPANION_SECRET}
+        expose:
+        - 8282
+        image: quay.io/invidious/invidious-companion:latest
+        networks:
+        - vocard
+        restart: unless-stopped
+    vocard-dashboard:
+        container_name: vocard-dashboard
+        healthcheck:
+            interval: 10s
+            retries: 5
+            start_period: 10s
+            test:
+            - CMD
+            - python
+            - -c
+            - import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()
+            timeout: 5s
+        image: ghcr.io/chocomeow/vocard-dashboard:latest
+        networks:
+        - vocard
+        ports:
+        - 8000:8000
+        restart: unless-stopped
+        volumes:
+        - ./dashboard/settings.json:/app/settings.json
+        - ./dashboard/overrides/assets/js/action.js:/app/assets/js/action.js
+        - ./dashboard/overrides/assets/js/objects.js:/app/assets/js/objects.js
+        - ./dashboard/overrides/assets/js/websocket.js:/app/assets/js/websocket.js
+        - ./dashboard/overrides/templates/controller.html:/app/templates/controller.html
+        - ./dashboard/overrides/templates/queue.html:/app/templates/queue.html
+        - ./dashboard/overrides/templates/index.html:/app/templates/index.html
+    vocard-db:
+        command:
+        - mongod
+        - --oplogSize=1024
+        - --wiredTigerCacheSizeGB=1
+        - --auth
+        - --noscripting
+        container_name: vocard-db
+        environment:
+        - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
+        - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+        expose:
+        - 27017
+        healthcheck:
+            interval: 10s
+            retries: 5
+            start_period: 10s
+            test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+            timeout: 5s
+        image: mongo:8
+        networks:
+        - vocard
+        restart: unless-stopped
+        volumes:
+        - ./mongodb_data:/data/db

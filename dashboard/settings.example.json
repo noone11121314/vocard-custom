@@ -1,0 +1,19 @@
+{
+    "host": "0.0.0.0",
+    "port": 8000,
+    "password": "YOUR_DASHBOARD_PASSWORD",
+    "client_id": "YOUR_BOT_CLIENT_ID",
+    "client_secret_id": "YOUR_DISCORD_CLIENT_SECRET",
+    "secret_key": "A_LONG_RANDOM_STRING",
+    "redirect_url": "https://discord.bababm.win/callback",
+    "logging": {
+        "file": {
+            "path": "./logs",
+            "enable": true
+        },
+        "level": {
+            "dashboard": "INFO"
+        },
+        "max_history": 30
+    }
+}

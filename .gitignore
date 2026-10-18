@@ -1,0 +1,30 @@
+# --- Secrets (redacted templates are committed instead: *.example.*, .env.example)
+.env
+/settings.json
+/settings.staging.json
+/dashboard/settings.json
+/lavalink/application.yml
+/lavalink/application.yml.bak*
+/lavalink/cookies.txt
+# vocard-src/settings.json is ignored by vocard-src/.gitignore
+
+# --- Runtime data
+/stream_cache/
+/stream_cache-staging/
+/mongodb_data/
+/logs/
+/logs-staging/
+/lavalink/logs/
+/lavalink/plugins/
+/last-session.json
+/last-session-staging.json
+
+# --- Local tooling / generated
+/.venv/
+/dashboard-src/
+/dashboard/tests/node_modules/
+/dashboard/tests/.scripts/
+/dashboard/tests/.stream.jsonl
+__pycache__/
+*.py[cod]
+.pytest_cache/
