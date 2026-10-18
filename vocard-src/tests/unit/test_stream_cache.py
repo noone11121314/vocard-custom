@@ -1375,3 +1375,45 @@ async def test_companion_gives_no_link_keeps_both_errors(tmp_path, monkeypatch):
     error = c._entries["vidB2"].error
     assert "not a bot" in error and "companion" in error
     assert not (tmp_path / "vidB2.audio").exists() and not (tmp_path / "vidB2.audio.part").exists()
+
+
+# --- Patch 37: [CacheRoute] log lines (how each song ended up served)
+
+
+def test_failure_reasons_are_classified_for_the_route_log():
+    assert stream_cache._short_reason("ERROR: [youtube] x: Sign in to confirm you're not a bot") == "YouTube bot check"
+    assert stream_cache._short_reason("yt-dlp exited 1: ERROR: unable to download video data: HTTP Error 403: Forbidden") == "HTTP 403"
+    assert stream_cache._short_reason("yt-dlp timed out") == "timed out"
+    assert stream_cache._short_reason("ERROR: Video unavailable") == "video unavailable"
+
+
+async def test_a_normal_download_logs_the_yt_dlp_route(tmp_path, monkeypatch, caplog):
+    dest = tmp_path / "vidLog.audio"
+    _patch_subprocess_sequence(monkeypatch, [
+        _FakeProcess(returncode=0, on_communicate=lambda: dest.write_bytes(b"x")),
+        _FakeMeasureProcess(_ebur128("-14.0")),
+    ])
+    with caplog.at_level("INFO", logger=stream_cache.logger.name):
+        await StreamCache().download("vidLog", "https://y/vidLog")
+
+    assert any("[CacheRoute] cached vidLog via yt-dlp" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_blocked_download_logs_both_attempts(tmp_path, monkeypatch, caplog):
+    _patch_subprocess(monkeypatch, _FakeProcess(returncode=1, stderr_lines=[b"ERROR: Sign in to confirm you're not a bot\n"]))
+    monkeypatch.setattr(stream_cache, "_url_resolver", AsyncMock(return_value=None))
+    with caplog.at_level("INFO", logger=stream_cache.logger.name):
+        await StreamCache().download("vidLog2", "https://y/vidLog2")
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("yt-dlp could not download vidLog2 (YouTube bot check) - trying invidious-companion" in m for m in messages)
+    assert any("could not cache vidLog2 by either route" in m for m in messages)
+    assert any(r.levelname == "WARNING" for r in caplog.records if "either route" in r.getMessage())
+
+
+async def test_without_the_fallback_a_failure_is_still_logged(tmp_path, monkeypatch, caplog):
+    _patch_subprocess(monkeypatch, _FakeProcess(returncode=1, stderr_lines=[b"ERROR: Video unavailable\n"]))
+    with caplog.at_level("INFO", logger=stream_cache.logger.name):
+        await StreamCache().download("vidLog3", "https://y/vidLog3")
+
+    assert any("[CacheRoute] could not cache vidLog3: yt-dlp video unavailable" in r.getMessage() for r in caplog.records)

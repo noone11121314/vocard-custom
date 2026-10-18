@@ -2,7 +2,7 @@
 
 A self-hosted [Vocard](https://github.com/ChocoMeow/Vocard) Discord music bot
 stack, running via Docker Compose with a locally patched bot image and a
-single-file dashboard override. **This is a patched deployment, not vanilla
+few dashboard file overrides. **This is a patched deployment, not vanilla
 upstream** — see [Local Patches](#local-patches) before assuming stock
 behavior or rebuilding anything from a clean upstream clone.
 
@@ -11,9 +11,10 @@ behavior or rebuilding anything from a clean upstream clone.
 | Service | Image | Notes |
 |---|---|---|
 | `vocard` | `vocard-patched:latest` (built locally from `vocard-src/`) | the bot itself |
-| `vocard-dashboard` | `ghcr.io/chocomeow/vocard-dashboard:latest` (stock, + one file override) | web dashboard, port 8000 |
+| `vocard-staging` | `vocard-patched:staging` (`docker-compose.staging.yml`) | second bot for trying changes; same image as production |
+| `vocard-dashboard` | `ghcr.io/chocomeow/vocard-dashboard:latest` (stock + bind-mounted overrides) | web dashboard, port 8000 |
 | `lavalink` | `ghcr.io/lavalink-devs/lavalink:latest` | audio node |
-| `invidious-companion` | `quay.io/invidious/invidious-companion:latest` | resolves direct YouTube stream URLs for the bot's direct-URL-resolver feature |
+| `invidious-companion` | `quay.io/invidious/invidious-companion:latest` | direct YouTube links; the download fallback when YouTube blocks yt-dlp |
 | `vocard-db` | `mongo:8` | bot + dashboard persistent storage |
 
 See `docker-compose.yml` for the full wiring (env vars, volumes, health checks).
@@ -22,91 +23,82 @@ See `docker-compose.yml` for the full wiring (env vars, volumes, health checks).
 
 ```
 vocard/
-├── docker-compose.yml
-├── settings.json              live bot config (bind-mounted into vocard, no hot-reload — restart after editing)
-├── vocard-src/                bot source; built into vocard-patched:latest
-│   └── docs/                  feature docs + testing guide for the bot
+├── docker-compose.yml / docker-compose.staging.yml
+├── .env                       compose secrets (ignored; template: .env.example)
+├── settings.json              live bot config (ignored; template: settings.example.json)
+├── run_tests.sh               every test suite + summary
+├── deploy_when_idle.sh        deploy the built image once nothing is playing
+├── cache_report.sh            cached vs streamed songs per day
+├── vocard-src/                bot source -> vocard-patched image (docs/, tests/)
 ├── dashboard/
-│   ├── settings.json          live dashboard config (bind-mounted)
-│   └── overrides/             file(s) overlaid onto the stock dashboard image — see Patch 4
-├── dashboard-src/             reference clone of dashboard source (STALE — see caution in local-patches.md)
-├── lavalink/                  application.yml, plugins, logs
-└── docs/
-    └── local-patches.md       full changelog of deviations from upstream
+│   ├── overrides/             JS + templates bind-mounted over the stock dashboard
+│   ├── tests/                 sync harness, fuzz, reload and real-browser checks
+│   ├── apply_js.sh            ship JS changes with no restart
+│   └── restart_dashboard.sh   restart for template/compose changes
+├── lavalink/                  application.yml (ignored; template committed), logs
+├── docs/                      local-patches.md (every patch), staging-deployment.md
+├── CHANGELOG.md               plain-language summary of the patches
+└── (ignored) stream_cache/ mongodb_data/ logs/ last-session*.json dashboard-src/
 ```
 
 ## Common operations
 
-**Rebuild and redeploy the bot** (after editing anything under `vocard-src/`):
+Secrets live in ignored files (`settings*.json`, `dashboard/settings.json`,
+`lavalink/application.yml`, `lavalink/cookies.txt`, `.env`); copy the
+committed `*.example.*` / `.env.example` templates to set up a new machine.
+
+**Deploy a bot change** (anything under `vocard-src/`): build once, tag both
+bots, then let the deploy wait until no one is listening so music is never
+cut:
 ```bash
-cd vocard-src && docker build -t vocard-patched:latest . && cd ..
-docker compose up -d vocard
+docker build -t vocard-patched:latest -f vocard-src/Dockerfile vocard-src
+docker tag vocard-patched:latest vocard-patched:staging
+./deploy_when_idle.sh        # staging, then production, once nothing is playing
+```
+Restarts are safe: the queue is saved on shutdown and resumed (same song,
+same position). See [`docs/staging-deployment.md`](docs/staging-deployment.md).
+
+**Dashboard changes:**
+```bash
+dashboard/apply_js.sh          # JS only - goes live with no restart
+dashboard/restart_dashboard.sh # templates (.html) or compose changes
 ```
 
-**Apply a `settings.json` change** (config only, no image involved):
-```bash
-docker compose restart vocard   # settings.json has no hot-reload
-```
+**Settings** (`/settings` or the dashboard) apply to the running bot
+immediately. Editing `settings.json` by hand still needs a bot restart.
 
-**Apply a dashboard override change** (edit a file under `dashboard/overrides/`):
-```bash
-docker compose up -d vocard-dashboard
-```
-
-**Check everything's healthy:**
+**Check health and how songs are being served:**
 ```bash
 docker compose ps
-docker logs vocard --tail 30
-docker logs vocard-dashboard --tail 15
+docker logs vocard --tail 30          # also kept in ./logs (30 days)
+./cache_report.sh                     # per day: played from cache vs streamed, and which route cached them
+grep "\[CacheRoute\]" logs/vocard.log  # every download / fallback / stream decision
 ```
 
 ## Local Patches
 
-This deployment deviates from upstream Vocard/Vocard-Dashboard in four ways:
+37 changes on top of upstream Vocard and its dashboard. Highlights: every
+song is downloaded to a local cache before it plays (with an
+invidious-companion fallback when YouTube blocks yt-dlp), per-song loudness
+normalization, a shared 0-100 volume, dashboards kept in sync between
+everyone in the channel, instant controls, queue survives restarts,
+self-reloading dashboard pages, and no secrets in git or the image.
 
-1. **Direct URL resolution + prefetch/cache** — YouTube tracks resolve through
-   a self-hosted invidious-companion instance to route around Lavalink's
-   youtube-plugin bot-detection blocks, with the next track pre-resolved in
-   the background so it doesn't add per-track lag.
-   → [`vocard-src/docs/direct-url-resolver.md`](vocard-src/docs/direct-url-resolver.md)
-2. **`updateVolume` relaxed to DJ-or-admin** (was admin-only), matching every
-   other playback control.
-3. **Music-controller button labels fixed** (`settings.json`'s translation
-   keys didn't match `langs/EN.json`'s actual nested structure).
-4. **Dashboard: spacebar no longer toggles play/pause** — deployed as a
-   single-file bind-mount override on top of the stock dashboard image, not a
-   custom-built image.
-5. **Dashboard: loading / prefetch status indicators** — a small spinner on
-   the current track while the bot is between songs, and on the next queue
-   item while its direct URL is being pre-resolved in the background.
-6. **Dashboard: resolved-URL cache size display** — shows the current size of
-   the (tiny, self-bounded) resolve cache from Patch 1. No audio is cached
-   anywhere in this deployment, so there's no size cap to control.
-
-Full details, exact diffs, and how to reapply each one after a rebuild:
-**[`docs/local-patches.md`](docs/local-patches.md)**.
+- What changed, in plain language: **[`CHANGELOG.md`](CHANGELOG.md)**
+- Cause, fix, files and tests for each patch: **[`docs/local-patches.md`](docs/local-patches.md)**
 
 ## Testing
 
-The bot has a test suite (unit + integration) covering the direct-URL-resolver
-feature (Patch 1 above) — the rest of the bot has no tests yet.
-
 ```bash
-# unit tests (fast, no network)
-docker run --rm -v $(pwd)/vocard-src:/app -w /app vocard-patched:latest \
-  bash -c "pip install -q -r requirements-dev.txt && pytest tests/unit -v"
-
-# integration tests (hits the real invidious-companion + Lavalink containers)
-# (load the secret first: set -a; . ./.env; set +a)
-docker run --rm --network vocard -v $(pwd)/vocard-src:/app -w /app \
-  -e INVIDIOUS_COMPANION_URL=http://invidious-companion:8282 \
-  -e INVIDIOUS_COMPANION_SECRET=$INVIDIOUS_COMPANION_SECRET \
-  vocard-patched:latest \
-  bash -c "pip install -q -r requirements-dev.txt && pytest tests/integration -v -m integration"
+./run_tests.sh               # everything, with a PASS/FAIL summary
+./run_tests.sh --quick       # unit tests + scripted dashboard sync
+./run_tests.sh --no-youtube  # skip the tests that download from YouTube
 ```
 
-Full guide (what's covered, why the tests are structured the way they are,
-how to add more): **[`vocard-src/docs/testing.md`](vocard-src/docs/testing.md)**.
+Unit tests, real-component integration tests (ffmpeg, MongoDB, Lavalink,
+the dashboard websocket, restart restore), a scripted and a randomized
+two-dashboard sync test, and a real-Chromium check of the minified dashboard
+JS. Full guide: **[`vocard-src/docs/testing.md`](vocard-src/docs/testing.md)**.
 
 ## Upstream docs
 

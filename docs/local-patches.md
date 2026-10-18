@@ -2163,13 +2163,51 @@ in throwaway containers):
   measured, 2 of them with yt-dlp forced to fail so the real companion
   route had to do it (2–5s each).
 
-**Not done (needs a decision):** passing YouTube account cookies to
-yt-dlp (`lavalink/cookies.txt` exists) would cut the bot checks further,
-but risks that Google account being flagged for automated use.
+**Decision (user, 2026-10-18): no YouTube account cookies.** Passing
+`lavalink/cookies.txt` to yt-dlp would cut the bot checks further but
+risks that Google account being flagged for automated use; the companion
+route covers those cases instead. See Patch 37 for how to monitor it.
 
 Tests: 4 new integration tests (fallback with Range, server ignoring Range,
 refused fallback leaves no files, speed cap honoured) plus the image check;
 4 unit tests.
+
+---
+
+## Patch 37 — Route logging, persisted bot logs, and a cache report
+
+User chose the companion route over YouTube cookies (see Patch 36) and
+asked for everything to be logged and documented.
+
+**`[CacheRoute]` log lines** (INFO/WARNING, so they survive if the `vocard`
+log level is lowered from DEBUG later):
+
+| Line | Meaning |
+|---|---|
+| `cached <id> via yt-dlp` | normal download |
+| `yt-dlp could not download <id> (<reason>) - trying invidious-companion` | yt-dlp blocked; reason is e.g. `YouTube bot check`, `HTTP 403` |
+| `cached <id> via invidious-companion` | the fallback worked |
+| `could not cache <id> by either route: ...` (WARNING) | both routes failed |
+| `could not cache <id>: yt-dlp <reason>` (WARNING) | failed with no fallback available |
+| `streaming <id> from YouTube` (WARNING) | last resort: played uncached and unmeasured |
+
+**Production bot logs are now kept:** `./logs:/app/logs` was added to
+`docker-compose.yml` (staging already had `./logs-staging`). Before this,
+production's `vocard.log` lived only inside the container and was lost on
+every redeploy. That's why earlier diagnoses kept running out of history.
+The log rotates daily and keeps 30 days (`settings.json` `logging`). The
+`vocard` level is still DEBUG, about 12MB/day, so roughly 360MB at most.
+
+**`./cache_report.sh [days]`:** per day, how many songs played from the
+cache vs. streamed (from Lavalink's logs, which already go back weeks),
+and which route new downloads took (from the `[CacheRoute]` lines).
+Baseline when this shipped: streamed 56% (10-08), 28% (10-11), 3%
+(10-18, before Patch 36's fallback).
+
+**Files:** `vocard-src/voicelink/stream_cache.py` (`_short_reason`, route
+logs), `vocard-src/voicelink/pool.py` (streaming log), `docker-compose.yml`,
+`cache_report.sh` (new). Tests: 4 unit (reason classification, each route's
+log line), integration fallback test now checks the route log too.
 
 ---
 

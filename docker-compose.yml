@@ -44,6 +44,7 @@ services:
         - ./settings.json:/app/settings.json
         - ./stream_cache:/app/stream_cache
         - ./last-session.json:/app/last-session.json
+        - ./logs:/app/logs
     invidious-companion:
         container_name: invidious-companion
         environment:

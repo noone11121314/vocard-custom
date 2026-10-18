@@ -118,8 +118,14 @@ pause to check in between:**
 ```bash
 dashboard/apply_js.sh            # dashboard JS changed: applies live, no restart
 dashboard/restart_dashboard.sh   # only if a template (.html) or compose changed
-docker compose up -d vocard
+./deploy_when_idle.sh            # bot: staging, then production, once nothing is playing
 ```
+
+`deploy_when_idle.sh` waits until Lavalink reports no playing players on two
+checks a minute apart, so a bot restart never cuts anyone's music (Patch
+33). Use plain `docker compose up -d vocard` only when the fix can't wait.
+Afterwards, `./cache_report.sh` and `grep "[CacheRoute]" logs/vocard.log`
+show how songs are being served (Patch 37).
 
 ## Why sharing Lavalink/invidious-companion/the dashboard is safe
 

@@ -45,7 +45,7 @@ parsing/clamping/failure modes) and the `gain` field's sidecar persistence/
 `_adopt_existing_files` recovery, alongside its original yt-dlp-download
 coverage; `test_node_direct_resolve.py` also covers `Node.get_track_gain`.
 
-290 unit tests, 33 integration tests (323 total), plus the dashboard suites below.
+294 unit tests, 33 integration tests (327 total), plus the dashboard suites below.
 
 ## Why the tests are structured this way
 

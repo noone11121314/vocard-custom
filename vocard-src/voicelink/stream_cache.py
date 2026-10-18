@@ -204,6 +204,20 @@ _url_resolver = None
 _CHUNK_BYTES: int = 1 << 20
 
 
+def _short_reason(error: str) -> str:
+    """One-word-ish cause for a failed download, for the [CacheRoute] log."""
+    e = (error or "").lower()
+    if "not a bot" in e or "sign in" in e:
+        return "YouTube bot check"
+    if "403" in e:
+        return "HTTP 403"
+    if "timed out" in e:
+        return "timed out"
+    if "unavailable" in e or "private" in e:
+        return "video unavailable"
+    return (error or "unknown").strip().splitlines()[-1][:80]
+
+
 def set_url_resolver(resolver) -> None:
     global _url_resolver
     _url_resolver = resolver
@@ -524,11 +538,15 @@ class StreamCache:
                 await asyncio.sleep(delay)
             if entry.error is not None and _url_resolver is not None:
                 ytdlp_error = entry.error
+                logger.info(f"[CacheRoute] yt-dlp could not download {key} ({_short_reason(ytdlp_error)}) - trying invidious-companion")
                 entry.error = None
                 entry.downloaded_bytes, entry.total_bytes = 0, None
                 await self._companion_attempt(key, entry, rate)
                 if entry.error is not None:
+                    logger.warning(f"[CacheRoute] could not cache {key} by either route: yt-dlp {_short_reason(ytdlp_error)}, companion {entry.error[:120]}")
                     entry.error = f"{ytdlp_error} | companion: {entry.error}"
+            elif entry.error is not None:
+                logger.warning(f"[CacheRoute] could not cache {key}: yt-dlp {_short_reason(entry.error)}")
         finally:
             entry.ready.set()
             self._prune()
@@ -578,7 +596,7 @@ class StreamCache:
             entry.size = dest.stat().st_size
             entry.gain = await self._measure_gain(dest, low_priority=True)
             self._write_meta_sidecar(key, title=entry.title, gain=entry.gain)
-            logger.debug(f"[StreamCache] cached {key} via invidious-companion ({entry.title or 'no title'}), {entry.size} bytes, gain={entry.gain}")
+            logger.info(f"[CacheRoute] cached {key} via invidious-companion ({entry.title or 'no title'}), {entry.size} bytes, gain={entry.gain}")
         except Exception as e:
             entry.error = f"{type(e).__name__}: {e}"
         finally:
@@ -632,8 +650,8 @@ class StreamCache:
             entry.size = dest.stat().st_size
             entry.gain = await self._measure_gain(dest, low_priority=True)
             self._write_meta_sidecar(key, title=entry.title, gain=entry.gain)
-            logger.debug(
-                f"[StreamCache] cached {key} ({entry.title or 'no title'}), {entry.size} bytes, "
+            logger.info(
+                f"[CacheRoute] cached {key} via yt-dlp ({entry.title or 'no title'}), {entry.size} bytes, "
                 f"gain={entry.gain if entry.gain is not None else 'unmeasured'}"
             )
         except Exception as e:

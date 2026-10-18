@@ -66,6 +66,9 @@ technical write-up (cause, fix, files, tests) is in
   labels fixed. (3, 4)
 
 ## Reliability and operations
+- Every song's route is logged (`[CacheRoute]`), production bot logs are
+  kept across redeploys (`./logs`), and `./cache_report.sh` shows per day
+  how many songs were cached vs streamed and which route cached them. (37)
 - `./run_tests.sh` runs every suite: unit, real-component integration
   tests (ffmpeg, MongoDB, Lavalink, websocket, restart restore), dashboard
   sync (scripted and randomized) and a real-Chromium page check. (34)

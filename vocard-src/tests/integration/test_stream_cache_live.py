@@ -200,7 +200,8 @@ async def _resolver_for(url):
     return resolve
 
 
-async def test_blocked_yt_dlp_falls_back_to_a_chunked_companion_download(cache_dir, tmp_path, blocked_ytdlp, monkeypatch):
+async def test_blocked_yt_dlp_falls_back_to_a_chunked_companion_download(cache_dir, tmp_path, blocked_ytdlp, monkeypatch, caplog):
+    caplog.set_level("INFO", logger=stream_cache.logger.name)
     src = tmp_path / "src.webm"
     _tone(src, 0.9, seconds=20)
     source = src.read_bytes()
@@ -220,6 +221,9 @@ async def test_blocked_yt_dlp_falls_back_to_a_chunked_companion_download(cache_d
     assert all(r and r.startswith("bytes=") for r in requests)
     assert _db(cache.gain("vidFB")) == pytest.approx(-8.0, abs=0.1)  # measured with real ffmpeg
     assert json_load(cache_dir / "vidFB.meta.json")["gain_version"] == 2
+    routes = [r.getMessage() for r in caplog.records if "[CacheRoute]" in r.getMessage()]
+    assert any("trying invidious-companion" in m for m in routes)
+    assert any("cached vidFB via invidious-companion" in m for m in routes)
 
 
 async def test_fallback_works_when_the_server_ignores_range(cache_dir, tmp_path, blocked_ytdlp, monkeypatch):

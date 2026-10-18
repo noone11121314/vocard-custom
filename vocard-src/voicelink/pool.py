@@ -472,8 +472,11 @@ class Node:
 
                 url = await resolve_youtube_direct_url(self._session, video_id)
                 if not url:
+                    self._logger.warning(f"[CacheRoute] {video_id} could not be cached or streamed")
                     return None
 
+                # Patch 37: the last resort - should be rare since Patch 36.
+                self._logger.warning(f"[CacheRoute] streaming {video_id} from YouTube (not cached; plays unmeasured at the typical gain)")
                 return await self._load_and_cache_direct_url(video_id, url)
         finally:
             self._direct_resolve_locks.pop(video_id, None)
