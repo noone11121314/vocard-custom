@@ -36,6 +36,7 @@ class IPCClient:
         self._websocket: Optional[aiohttp.ClientWebSocketResponse] = None
         self._task: Optional[asyncio.Task] = None
         self._reconnect_task: Optional[asyncio.Task] = None
+        self._closing: bool = False  # set by disconnect(): no auto-reconnect
 
         self._heanders = {
             "Authorization": self._password,
@@ -61,13 +62,17 @@ class IPCClient:
         retried, and a dropped connection got exactly one attempt - if the
         dashboard was still restarting then, the bot stayed off the
         dashboard until it was itself restarted."""
+        if self._closing:
+            return
         if self._reconnect_task and not self._reconnect_task.done():
             return
         self._reconnect_task = self._bot.loop.create_task(self._reconnect_loop())
 
     async def _reconnect_loop(self) -> None:
-        while not self._is_connected:
+        while not self._is_connected and not self._closing:
             await asyncio.sleep(10)
+            if self._closing:
+                return
             try:
                 await self.connect()
             except Exception:
@@ -78,6 +83,8 @@ class IPCClient:
             try:
                 msg = await self._websocket.receive()
                 self._logger.debug(f"Received Message: {msg}")
+            except asyncio.CancelledError:
+                raise  # disconnect() cancelling the listener - not a dropped connection
             except:
                 self._is_connected = False
                 self._schedule_reconnect()
@@ -136,6 +143,8 @@ class IPCClient:
 
             if self._is_connecting or self._is_connected:
                 return
+
+            self._closing = False
             
             self._is_connecting = True
             self._websocket = await self._session.ws_connect(
@@ -165,8 +174,21 @@ class IPCClient:
         return self
 
     async def disconnect(self) -> None:
+        """Patch 34: also closes the websocket (it used to stay open on the
+        dashboard's side) and stops any pending auto-reconnect - before, the
+        listener treated its own cancellation as a dropped connection and
+        reconnected straight away."""
+        self._closing = True
         self._is_connected = False
-        self._task.cancel()
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+        if self._task:
+            self._task.cancel()
+        if self._websocket and not self._websocket.closed:
+            await self._websocket.close()
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._session = None  # connect() makes a fresh one
         self._logger.info("Disconnected to dashboard!")
     
     @property

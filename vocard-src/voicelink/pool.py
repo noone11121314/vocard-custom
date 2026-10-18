@@ -558,6 +558,13 @@ class Node:
         try:
             from . import stream_cache
             gain = await stream_cache.get_gain(video_id)
+            if gain is None:
+                # Patch 35: not measured (e.g. streamed after a failed
+                # download) - use the cache's typical gain instead of full
+                # volume, which sounded much louder than its neighbours.
+                gain = await stream_cache.get_typical_gain()
+                if gain is not None:
+                    self._logger.debug(f"[Loudness] {video_id} unmeasured - using the typical gain {gain:.2f}")
         except Exception:
             gain = None
 

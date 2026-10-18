@@ -1274,3 +1274,71 @@ async def test_measure_gain_handles_a_silent_track(monkeypatch):
     monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-70.0", "-inf"))))
 
     assert await StreamCache._measure_gain(Path("/fake/path.audio")) == pytest.approx(10 ** (8 / 20))
+
+
+# --- Patch 35: random YouTube 403s, failed-download cooldown, unmeasured songs
+
+
+async def test_a_random_403_is_retried_and_then_succeeds(tmp_path, monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    dest = tmp_path / "vid403.audio"
+    refused = _FakeProcess(returncode=1, stderr_lines=[b"ERROR: unable to download video data: HTTP Error 403: Forbidden\n"])
+    ok = _FakeProcess(returncode=0, on_communicate=lambda: dest.write_bytes(b"x"))
+    calls = _patch_subprocess_sequence(monkeypatch, [refused, ok, _FakeMeasureProcess(_ebur128("-14.0"))])
+    c = StreamCache()
+
+    assert await c.download("vid403", "https://y/vid403") is True
+    assert sum(1 for a in calls if "yt_dlp" in a) == 2
+    assert c.is_ready("vid403")
+
+
+async def test_gives_up_after_the_403_retries(tmp_path, monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    calls = []
+
+    async def always_refused(*args, **kwargs):
+        calls.append(args)
+        return _FakeProcess(returncode=1, stderr_lines=[b"ERROR: HTTP Error 403: Forbidden\n"])
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", always_refused)
+    c = StreamCache()
+
+    assert await c.download("vidNo", "https://y/vidNo") is False
+    assert sum(1 for a in calls if "yt_dlp" in a) == len(stream_cache._RETRY_DELAYS_403) + 1
+
+
+async def test_other_failures_are_not_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    gone = _FakeProcess(returncode=1, stderr_lines=[b"ERROR: Video unavailable\n"])
+    calls = _patch_subprocess(monkeypatch, gone)
+
+    assert await StreamCache().download("vidGone", "https://y/vidGone") is False
+    assert sum(1 for a in calls if "yt_dlp" in a) == 1
+
+
+async def test_the_failure_cooldown_blocks_background_retries_but_not_urgent_ones(tmp_path, monkeypatch):
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    c = StreamCache()
+    _patch_subprocess(monkeypatch, _FakeProcess(returncode=1, stderr_lines=[b"ERROR: Video unavailable\n"]))
+    assert await c.download("vidC", "https://y/vidC") is False
+
+    calls = _patch_subprocess(monkeypatch, _FakeProcess(returncode=0, on_communicate=lambda: (tmp_path / "vidC.audio").write_bytes(b"x")))
+    assert await c.download("vidC", "https://y/vidC") is False  # background: still cooling down
+    assert calls == []
+
+    assert await c.download("vidC", "https://y/vidC", urgent=True) is True  # someone is waiting: try again
+
+
+def test_typical_gain_is_the_median_of_measured_songs(tmp_path):
+    for key, gain in (("a", 0.4), ("b", 0.5), ("c", 0.6), ("d", None)):
+        (tmp_path / f"{key}.audio").write_bytes(b"x")
+        if gain is not None:
+            (tmp_path / f"{key}.meta.json").write_text(f'{{"gain": {gain}}}')
+    c = StreamCache()
+    c._adopt_existing_files()
+
+    assert c.typical_gain() == pytest.approx(0.5)
+
+
+def test_typical_gain_is_none_with_nothing_measured():
+    assert StreamCache().typical_gain() is None

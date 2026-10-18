@@ -71,6 +71,10 @@ CACHE_DIR: Path = Path(os.getenv("STREAM_CACHE_DIR", "/tmp/vocard_stream_cache")
 # Keeps a persistently-broken video (blocked, region-locked, whatever) from
 # getting hammered on every single prefetch attempt.
 _FAILED_RETRY_COOLDOWN: int = 1800
+# Patch 35: YouTube occasionally refuses one download with HTTP 403 at random
+# (seen live 2026-10-18; the same video downloaded fine on 7 retries right
+# after). Retry those after these delays (seconds) before giving up.
+_RETRY_DELAYS_403: tuple = (2, 5)
 # Total disk budget across all cached audio files, 5GB max. Disk is cheap
 # relative to the old 300MiB in-memory cap, and a full track is tens of MB
 # at most, so this comfortably holds a healthy number of recently-queued
@@ -300,6 +304,10 @@ class StreamCache:
     async def stop(self) -> None:
         if self._backfill_task and not self._backfill_task.done():
             self._backfill_task.cancel()
+            try:
+                await self._backfill_task
+            except asyncio.CancelledError:
+                pass
         if self._runner:
             await self._runner.cleanup()
 
@@ -357,6 +365,14 @@ class StreamCache:
         """
         entry = self._entries.get(key)
         return entry.gain if entry else None
+
+    def typical_gain(self) -> Optional[float]:
+        """Patch 35: the median measured gain across the cache - what an
+        unmeasured song (e.g. one that had to be streamed) is played at, so
+        it isn't left at full volume next to normalized songs (most music is
+        mastered loud: the median here is about -6dB)."""
+        gains = sorted(e.gain for e in self._entries.values() if e.gain is not None)
+        return gains[len(gains) // 2] if gains else None
 
     def progress(self, key: str) -> Optional[float]:
         """Fraction (0.0-1.0) of `key`'s download completed so far, for the
@@ -447,7 +463,11 @@ class StreamCache:
                     existing.title = title
                     self._write_meta_sidecar(key, title=title)
                 return existing.path is not None and existing.path.exists()
-            if time.monotonic() - existing.created_at < _FAILED_RETRY_COOLDOWN:
+            # Patch 35: the cooldown only stops *background* retries. Someone
+            # waiting for this song right now gets a fresh attempt - before,
+            # one random 403 meant the song was streamed unmeasured (full
+            # volume, much louder than the normalized songs) for 30 minutes.
+            if not urgent and time.monotonic() - existing.created_at < _FAILED_RETRY_COOLDOWN:
                 return False
 
         entry = _CacheEntry(view_count=1, title=title)
@@ -464,6 +484,21 @@ class StreamCache:
             return await self._run_ytdlp_now(key, youtube_url, entry, _BACKGROUND_RATE)
 
     async def _run_ytdlp_now(self, key: str, youtube_url: str, entry: _CacheEntry, rate: str) -> None:
+        try:
+            for attempt in range(len(_RETRY_DELAYS_403) + 1):
+                entry.error = None
+                await self._ytdlp_attempt(key, youtube_url, entry, rate)
+                if entry.error is None or "HTTP Error 403" not in entry.error or attempt == len(_RETRY_DELAYS_403):
+                    break
+                delay = _RETRY_DELAYS_403[attempt]
+                logger.debug(f"[StreamCache] YouTube refused {key} (403), retrying in {delay}s")
+                entry.downloaded_bytes, entry.total_bytes = 0, None
+                await asyncio.sleep(delay)
+        finally:
+            entry.ready.set()
+            self._prune()
+
+    async def _ytdlp_attempt(self, key: str, youtube_url: str, entry: _CacheEntry, rate: str) -> None:
         dest = CACHE_DIR / f"{key}.audio"
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -517,9 +552,6 @@ class StreamCache:
             entry.error = str(e)
             dest.unlink(missing_ok=True)
             logger.debug(f"[StreamCache] yt-dlp download failed for {key}: {e}")
-        finally:
-            entry.ready.set()
-            self._prune()
 
     @staticmethod
     async def _measure_gain(path: Path, low_priority: bool = False) -> Optional[float]:
@@ -672,6 +704,11 @@ async def prefetch_to_disk(key: str, youtube_url: str, title: str = "", urgent: 
     """
     cache = await _get_cache()
     return await cache.download(key, youtube_url, title, urgent=urgent)
+
+
+async def get_typical_gain() -> Optional[float]:
+    cache = await _get_cache()
+    return cache.typical_gain()
 
 
 async def get_progress(key: str) -> Optional[float]:

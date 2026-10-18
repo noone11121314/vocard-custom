@@ -680,7 +680,7 @@ class Player(VoiceProtocol):
                 # previous position for the whole caching window, showing the
                 # loading song in both Now Playing and the queue and sending
                 # off-by-one indexes for remove/move/skip-to.
-                await self.send_ws({"op": "trackLoading", "trackId": track.track_id, "currentQueuePosition": self.queue._position})
+                await self.send_ws({"op": "trackLoading", "trackId": track.track_id, "currentQueuePosition": self.queue._position, "isPaused": self._paused})
 
             start = getattr(self, "_resume_start_ms", 0) or track.position
             self._resume_start_ms = 0
@@ -1083,7 +1083,9 @@ class Player(VoiceProtocol):
                         continue
 
                     self._validate_time(track, start_time, end_time)
-                    self.queue.put_at_front(track) if at_front else self.queue.put(track)  
+                    # Patch 34: "play next" with several songs keeps their
+                    # order (put_at_front() each one reversed them).
+                    self.queue.put_at_index(len(tracks) + 1, track) if at_front else self.queue.put(track)
                     tracks.append(track)
                     _duplicate_tracks.append(track.uri)
             else:
@@ -1099,7 +1101,7 @@ class Player(VoiceProtocol):
                 if self.channel.members and len([m for m in self.channel.members if not m.bot]) > 0:
                     self._cancel_inactive_cleanup_timer()
                 if self.is_ipc_connected:
-                    await self.send_ws({"op": "addTrack", "tracks": [track.track_id for track in tracks], "position": -1 if is_list else position}, tracks[0].requester)
+                    await self.send_ws({"op": "addTrack", "tracks": [track.track_id for track in tracks], "position": (1 if at_front else -1) if is_list else position}, tracks[0].requester)
 
                 self._logger.debug(f"Player in {self.guild.name}({self.guild.id}) has been added {len(tracks)} tracks into the queue.")
 
@@ -1312,7 +1314,10 @@ class Player(VoiceProtocol):
         """Clears the queue or the history of tracks."""
         queue_type = queue_type.lower()
         if queue_type == 'history':
-            self.queue.history_clear(self.is_playing)
+            # Patch 34: has_dequeued_track, not is_playing - while a song is
+            # still caching it's already off the queue but not "playing" yet,
+            # and clearing the history used to delete it too.
+            self.queue.history_clear(self.has_dequeued_track)
         elif queue_type == "queue":
             self.queue.clear()
         

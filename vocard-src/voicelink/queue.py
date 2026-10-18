@@ -150,8 +150,11 @@ class Queue:
             raise OutofList(self.get_msg("queue.errors.outOfList"))
 
         try:
-            item = self._queue[self._position + target - 1]
-            self._queue.remove(item)
+            # Patch 34: pop by position. list.remove(item) deleted the first
+            # *equal* track, and Track.__eq__ compares track_id - so with the
+            # same song queued twice (or also in the history) it moved the
+            # wrong copy.
+            item = self._queue.pop(self._position + target - 1)
             self.put_at_index(to, item)
             return item
         except:
@@ -167,13 +170,18 @@ class Queue:
             index, index2 = index2, index
 
         try:
-            removed_tracks: Dict[str, Track] = {}
-            for i, track in enumerate(self._queue[pos + index: pos + index2 + 1]):
+            # Patch 34: delete by position (see move()) - list.remove(track)
+            # deleted the first copy of the same song, possibly one in the
+            # history or the one playing. Keys are the original indexes,
+            # which the dashboard deletes highest-first.
+            removed_tracks: Dict[int, Track] = {}
+            for i in range(max(0, pos + index), min(pos + index2 + 1, len(self._queue))):
+                track = self._queue[i]
                 if member and track.requester != member:
                     continue
-            
-                self._queue.remove(track)
-                removed_tracks[pos + index + i] = track
+                removed_tracks[i] = track
+            for i in sorted(removed_tracks, reverse=True):
+                del self._queue[i]
 
             return removed_tracks
         except:

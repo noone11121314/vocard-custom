@@ -24,17 +24,25 @@ from voicelink.ipc import methods
 from voicelink.player import Player
 from voicelink.queue import Queue
 
+# Usage: generate_sync_stream.py <track ids json> <out.jsonl>            (scripted session)
+#        generate_sync_stream.py <track ids json> <out prefix> --fuzz <first seed> <seeds> <steps>
 TRACK_IDS = json.load(open(sys.argv[1]))
-OUT = open(sys.argv[2], "w")
+FUZZ = "--fuzz" in sys.argv
+OUT = None if FUZZ else open(sys.argv[2], "w")
 
 USER_A = types.SimpleNamespace(id=111, bot=False, name="alice", display_avatar=types.SimpleNamespace(url="a.png"))
 USER_B = types.SimpleNamespace(id=222, bot=False, name="bob", display_avatar=types.SimpleNamespace(url="b.png"))
 
 
+_uid = 0
+
+
 def make_track(i: int):
-    track_id = TRACK_IDS[i]
+    global _uid
+    _uid += 1  # distinct uri per call so allow_duplicate stays the only dedup rule in play
+    track_id = TRACK_IDS[i % len(TRACK_IDS)]
     t = types.SimpleNamespace(
-        track_id=track_id, uri=f"https://www.youtube.com/watch?v=fixture{i}", title=f"T{i}",
+        track_id=track_id, uri=f"https://www.youtube.com/watch?v=fixture{i}&n={_uid}", title=f"T{i}",
         requester=USER_A, length=200_000, position=0, end_time=None, source="youtube",
         identifier=f"fixture{i}", is_stream=False,
     )
@@ -87,6 +95,7 @@ def build_player() -> Player:
     p.update_voice_status = AsyncMock()
     p.send = AsyncMock()  # Lavalink REST
     p._prefetch_next_direct_track = lambda: None
+    p._schedule_inactive_cleanup_timer = lambda: None
     p.is_privileged = lambda *a, **k: True
     p.dj = USER_A
     from voicelink.filters import Filters
@@ -124,13 +133,86 @@ async def finish_current(player: Player, during_loading=None) -> None:
     await player.do_next()
 
 
-async def main() -> None:
+def stub_edges() -> None:
     stream_cache.list_entries = AsyncMock(return_value=[])
     from voicelink import mongodb
     mongodb.MongoDBHandler.update_user = AsyncMock()
     mongodb.MongoDBHandler.update_settings = AsyncMock()
     methods.MongoDBHandler.update_settings = AsyncMock()
 
+
+async def fuzz(seed: int, steps: int) -> None:
+    """Random multi-user session (Patch 34). Every operation goes through the
+    real Player/Queue; operations the bot itself refuses (e.g. shuffling a
+    2-song queue, an out-of-range index) are simply skipped, like a refused
+    dashboard click."""
+    import random
+    from voicelink.exceptions import VoicelinkException
+    rng = random.Random(seed)
+    p = build_player()
+    await snapshot_for(p, "A")
+    joined_b = False
+    users = (USER_A, USER_B)
+
+    def upcoming():
+        return len(p.queue.tracks())
+
+    async def one_action():
+        r = rng.random()
+        who = rng.choice(users)
+        if r < 0.22:
+            n = rng.choice((1, 1, 2, 3))
+            await p.add_track([make_track(rng.randrange(10)) for _ in range(n)] if n > 1 else make_track(rng.randrange(10)))
+        elif r < 0.30:
+            n = rng.choice((1, 1, 2, 3))
+            await p.add_track([make_track(rng.randrange(10)) for _ in range(n)] if n > 1 else make_track(rng.randrange(10)), at_front=True)
+        elif r < 0.42 and upcoming():
+            i = rng.randint(1, upcoming())
+            expected = p.queue.tracks()[i - 1].track_id if rng.random() < 0.8 else p.queue.tracks()[rng.randrange(upcoming())].track_id
+            await p.remove_track(i, requester=who, expected_track_id=expected)
+        elif r < 0.52 and upcoming() >= 2:
+            await p.move_track(rng.randint(1, upcoming()), rng.randint(1, upcoming()), who)
+        elif r < 0.58 and upcoming() >= 2:
+            a, b = rng.sample(range(1, upcoming() + 1), 2)
+            await p.swap_track(a, b, who)
+        elif r < 0.64:
+            await p.shuffle(rng.choice(("queue", "history")), who)
+        elif r < 0.68:
+            await p.clear_queue(rng.choice(("queue", "history")), who)
+        elif r < 0.76:
+            await p.set_pause(not p._paused, who)
+        elif r < 0.82:
+            await p.set_volume(rng.randint(0, 100), who)
+        else:
+            return "next"
+
+    async def safe(coro_factory):
+        try:
+            return await coro_factory()
+        except VoicelinkException:
+            return None
+
+    for _ in range(steps):
+        r = rng.random()
+        if not joined_b and r < 0.08:
+            await snapshot_for(p, "B"); joined_b = True
+            continue
+        if r < 0.03:
+            await snapshot_for(p, "A2")  # A reloads its page
+            continue
+        if await safe(one_action) == "next":
+            async def during():
+                for _ in range(rng.randint(0, 3)):
+                    if await safe(one_action) == "next":
+                        continue
+                if rng.random() < 0.15:
+                    await snapshot_for(p, "A2")
+            await finish_current(p, during_loading=during if rng.random() < 0.5 else None)
+    await snapshot_for(p, "FINAL")
+
+
+async def main() -> None:
+    stub_edges()
     p = build_player()
     await snapshot_for(p, "A")  # dashboard A connects to an idle player
 
@@ -174,4 +256,13 @@ async def main() -> None:
     OUT.close()
 
 
-asyncio.run(main())
+if FUZZ:
+    i = sys.argv.index("--fuzz")
+    first, count, steps = (int(x) for x in sys.argv[i + 1:i + 4])
+    stub_edges()
+    for seed in range(first, first + count):
+        OUT = open(f"{sys.argv[2]}{seed}.jsonl", "w")
+        asyncio.run(fuzz(seed, steps))
+        OUT.close()
+else:
+    asyncio.run(main())

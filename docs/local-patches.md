@@ -2064,6 +2064,68 @@ now feed real `ebur128` summary output.
 
 ---
 
+## Patch 34 — Integration/fuzz/browser test suites, and the bugs they found
+
+User asked for more tests, especially integration tests, so future changes
+break less. New suites (details in `vocard-src/docs/testing.md`, run all
+with `./run_tests.sh`): real-component integration tests for the stream
+cache + ffmpeg, the dashboard connection, MongoDB and restart-restore; a
+randomized two-dashboard sync fuzz (`dashboard/tests/fuzz_sync.sh`); a
+real-Chromium page check of the minified JS (`dashboard/tests/browser_check.sh`).
+Each new test was checked to fail with the bug it targets put back.
+
+**Bugs found and fixed by them:**
+- **`Queue.remove()`/`move()` removed or moved the wrong copy of a song.**
+  They used `list.remove(track)`, and `Track.__eq__` compares `track_id`,
+  so with the same song queued twice (or in the history and queued again)
+  the *first* copy went: possibly one in the history, or the one playing.
+  Both now work by position.
+- **Dashboard positions were off by one whenever nothing was current**
+  (queue finished). The bot's positions are relative to its "current" slot.
+  New `Player.serverBase()` in `objects.js` is used by addTrack (incl.
+  "play next" while idle, which was appended at the end), move, swap, both
+  shuffles and clear-queue. That was 15 of the 29 failing fuzz sessions.
+- **Skipping a paused song** un-pauses it on the bot, but dashboards kept
+  showing "paused" until the next song finished loading. `trackLoading`
+  now carries `isPaused`.
+- **Clearing the history while a song was still caching deleted that
+  song** (`history_clear(is_playing)`; now `has_dequeued_track`).
+- **"Play next" with several songs reversed their order**, and the
+  dashboard appended them at the end. Order is kept (`put_at_index`) and
+  `addTrack` reports `position: 1`.
+- **Dashboard connection:** `disconnect()` left the websocket and HTTP
+  session open, and the listener treated its own cancellation as a drop
+  and reconnected right away (`_closing` flag, `CancelledError` re-raised).
+- `StreamCache.stop()` now awaits the cancelled loudness backfill.
+
+Fuzz before the fixes: 29 of 30 random sessions desynced; after: 100 of
+100 (80 steps each) in sync.
+
+---
+
+## Patch 35 — A song that failed to cache played much louder than the rest
+
+User: the current song was louder than everything else. It was the song
+whose download YouTube randomly refused (HTTP 403) earlier. The failed
+download blocked retries for 30 minutes (`_FAILED_RETRY_COOLDOWN`), so when
+it came up it was **streamed** from YouTube, unmeasured, at full volume
+(gain 1.0), while measured songs are mostly turned down about 6–8 dB.
+
+- **Retry on 403:** a 403 is retried after 2s and 5s before giving up
+  (`_RETRY_DELAYS_403`). The same video downloaded fine on 7 retries
+  right after the failure.
+- **Urgent downloads ignore the cooldown:** it now only blocks
+  *background* retries. A song someone is waiting for gets a fresh attempt.
+- **Better default for unmeasured songs:** if a song still has to be
+  streamed, `Node.get_track_gain` uses the cache's median measured gain
+  (`StreamCache.typical_gain`) instead of 1.0. Full volume only if nothing
+  has been measured at all.
+
+Deployed with `deploy_when_idle.sh` (nothing was playing). Tests: 6 new in
+`test_stream_cache.py`, 3 in `test_node_direct_resolve.py`.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

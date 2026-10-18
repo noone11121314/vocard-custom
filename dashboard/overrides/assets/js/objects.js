@@ -553,6 +553,8 @@ const methods = {
         // caching window - before, the loading song also showed as the
         // first "Next in queue" card and remove/move/skip-to were off by one.
         if (data?.currentQueuePosition !== undefined) {
+            // Patch 34: skipping a paused song un-pauses it on the bot.
+            if (typeof data?.isPaused === "boolean") player.isPaused = data.isPaused;
             const track = player.updateCurrentQueuePos(data.currentQueuePosition);
             player.updateNowPlayingPrefetchBar();
             if (data?.trackId && track?.trackId !== data.trackId) {
@@ -652,9 +654,12 @@ const methods = {
         }
         player.tm.showToast(data["requesterId"], msg);
 
-        if (data.position >= 1 && player.isPlaying()) {
+        // Patch 34: data.position is relative to the bot's queue position,
+        // with or without a current song (serverBase) - "play next" while
+        // nothing was playing used to be appended at the end instead.
+        if (data.position >= 1) {
             player.queue.splice(
-                player.currentQueuePosition + data.position,
+                player.serverBase() + data.position,
                 0,
                 ...tracks
             );
@@ -782,9 +787,9 @@ const methods = {
         const { index1: firstTrackData, index2: secondTrackData } = data;
 
         const firstTrackIndex =
-            player.currentQueuePosition + firstTrackData.index;
+            player.serverBase() + firstTrackData.index;
         const secondTrackIndex =
-            player.currentQueuePosition + secondTrackData.index;
+            player.serverBase() + secondTrackData.index;
 
         const firstTrack = player.queue.at(firstTrackIndex);
         const secondTrack = player.queue.at(secondTrackIndex);
@@ -816,13 +821,13 @@ const methods = {
         let newIndex = data?.newIndex;
 
         let element = player.queue.splice(
-            player.currentQueuePosition + movedTrack?.index,
+            player.serverBase() + movedTrack?.index,
             1
         )[0];
         if (element?.trackId != movedTrack?.trackId) {
             return player.send({ op: "initPlayer" });
         }
-        player.queue.splice(player.currentQueuePosition + newIndex, 0, element);
+        player.queue.splice(player.serverBase() + newIndex, 0, element);
         player.tm.showToast(
             data["requesterId"],
             formatString(localeTexts.moveTrack, element.title, newIndex)
@@ -853,14 +858,14 @@ const methods = {
         };
 
         if (queueType === "queue") {
-            player.queue.splice(player.currentQueuePosition + 1);
+            player.queue.splice(player.serverBase() + 1);
             player.queue.push(
                 ...tracks.map(decodedTrack).filter((track) => track !== null)
             );
         } else {
             player.queue.splice(
                 0,
-                player.currentQueuePosition,
+                Math.max(0, player.serverBase()),
                 ...tracks.map(decodedTrack).filter((track) => track !== null)
             );
         }
@@ -908,10 +913,7 @@ const methods = {
         let queueType = data?.queueType;
         if (queueType === "queue") {
             // Clear all tracks after the current position
-            player.queue.splice(
-                player.currentQueuePosition + 1,
-                player.queue.length - (player.currentQueuePosition + 1)
-            );
+            player.queue.splice(player.serverBase() + 1);
         } else if (queueType === "history") {
             // Ensure current position is valid and clear history
             if (player.currentQueuePosition > 0) {
@@ -1497,6 +1499,16 @@ class Player {
             this.updateInfo();
         }
         this.send({ op: "repeatTrack" });
+    }
+
+    // Patch 34: the array index of the bot's "current" slot - the playing (or
+    // caching) song, or, when nothing is current, the slot just before the
+    // next song. The bot's queue positions (addTrack.position, move/swap
+    // index, shuffle/clear ranges) are all relative to it. currentQueuePosition
+    // alone is only right while a song is current: when idle it already
+    // points at the next song, so every conversion was off by one.
+    serverBase() {
+        return this.hasActiveTrack ? this.currentQueuePosition : this.currentQueuePosition - 1;
     }
 
     send(payload) {

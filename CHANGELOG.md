@@ -14,6 +14,10 @@ technical write-up (cause, fix, files, tests) is in
 - Queue reordering and volume are open to every member in the channel. (2, 8)
 
 ## Volume
+- A song that couldn't be cached no longer plays much louder than the
+  rest: random YouTube refusals are retried, a song someone is waiting for
+  ignores the failure cooldown, and anything still unmeasured gets the
+  typical adjustment instead of full volume. (35)
 - The volume shows as a "NN%" pill next to the slider, highlighted while
   dragging, with a speaker icon that follows the level. (27, 31)
 - One shared bot volume, 0–100 everywhere: dashboard, `/volume` and the
@@ -36,6 +40,10 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- Remove/move hit the right copy of a song that's in the queue twice, and
+  dashboards stay in sync after the queue has finished, after skipping a
+  paused song, and with multi-song "play next". Found by a new randomized
+  two-dashboard sync test. (34)
 - Pages reload themselves when the connection drops, when the bot
   restarts, or after 10+ minutes away, instead of going half-empty. (29)
 - Dashboard JS updates go live without restarting the dashboard
@@ -54,6 +62,9 @@ technical write-up (cause, fix, files, tests) is in
   labels fixed. (3, 4)
 
 ## Reliability and operations
+- `./run_tests.sh` runs every suite: unit, real-component integration
+  tests (ffmpeg, MongoDB, Lavalink, websocket, restart restore), dashboard
+  sync (scripted and randomized) and a real-Chromium page check. (34)
 - The bot keeps retrying its dashboard connection until it's back. (29)
 - Fixed silently dropped dashboard requests for members the bot hadn't
   cached yet. (12)

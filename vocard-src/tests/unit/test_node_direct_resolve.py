@@ -523,3 +523,32 @@ async def test_get_track_gain_defaults_to_neutral_on_any_error(node, monkeypatch
     result = await node.get_track_gain("vid52")  # must not raise
 
     assert result == 1.0
+
+
+# --- Patch 35: an unmeasured song plays at the cache's typical gain, not full volume
+
+
+async def test_an_unmeasured_song_gets_the_typical_gain(node, monkeypatch):
+    from voicelink import stream_cache
+    monkeypatch.setattr(stream_cache, "get_gain", AsyncMock(return_value=None))
+    monkeypatch.setattr(stream_cache, "get_typical_gain", AsyncMock(return_value=0.49))
+
+    assert await node.get_track_gain("streamedVid") == pytest.approx(0.49)
+
+
+async def test_full_volume_only_when_nothing_has_been_measured_at_all(node, monkeypatch):
+    from voicelink import stream_cache
+    monkeypatch.setattr(stream_cache, "get_gain", AsyncMock(return_value=None))
+    monkeypatch.setattr(stream_cache, "get_typical_gain", AsyncMock(return_value=None))
+
+    assert await node.get_track_gain("streamedVid") == 1.0
+
+
+async def test_a_measured_song_keeps_its_own_gain(node, monkeypatch):
+    from voicelink import stream_cache
+    monkeypatch.setattr(stream_cache, "get_gain", AsyncMock(return_value=0.8))
+    typical = AsyncMock(return_value=0.49)
+    monkeypatch.setattr(stream_cache, "get_typical_gain", typical)
+
+    assert await node.get_track_gain("cachedVid") == pytest.approx(0.8)
+    typical.assert_not_awaited()

@@ -45,7 +45,7 @@ parsing/clamping/failure modes) and the `gain` field's sidecar persistence/
 `_adopt_existing_files` recovery, alongside its original yt-dlp-download
 coverage; `test_node_direct_resolve.py` also covers `Node.get_track_gain`.
 
-275 unit tests, 6 integration tests (281 total).
+287 unit tests, 28 integration tests (315 total), plus the dashboard suites below.
 
 ## Why the tests are structured this way
 
@@ -124,20 +124,44 @@ pulled.
 
 ## Running everything
 
+From the project root, with the stack up:
+
 ```bash
-docker run --rm --network vocard --name vocard-test --network-alias vocard-test \
-  -v /root/vocard/vocard-src:/app -w /app \
-  -e INVIDIOUS_COMPANION_URL=http://invidious-companion:8282 \
-  -e INVIDIOUS_COMPANION_SECRET=$INVIDIOUS_COMPANION_SECRET \
-  -e STREAM_CACHE_BASE_URL=http://vocard-test:2334 \
-  vocard-patched:latest \
-  bash -c "pip install -q -r requirements-dev.txt && pytest tests/ -v"
+./run_tests.sh               # every suite, then a PASS/FAIL summary (non-zero exit on any failure)
+./run_tests.sh --quick       # unit tests + the scripted dashboard sync test only
+./run_tests.sh --no-youtube  # skip the integration tests that download from YouTube
 ```
 
-Omit `-m integration` filters entirely and it runs both suites (235 tests
-total) as long as it's on the `vocard` network with the companion secret set;
-otherwise the integration tests just skip and you still get the 275 unit
-results.
+It loads `.env` itself (companion secret, MongoDB login) and runs:
+
+| Suite | What it uses | Guards against |
+|---|---|---|
+| unit (`tests/unit`) | fakes only | logic regressions, fast |
+| integration (`tests/integration`) | real ffmpeg, MongoDB (throwaway DB), Lavalink, invidious-companion, a real websocket server | the seams between components - see below |
+| `dashboard/tests/run_sync_test.sh` | real `Player`/`Queue` code + two jsdom dashboards running the real dashboard JS | dashboards drifting out of sync with the bot; the page-reload rules |
+| `dashboard/tests/fuzz_sync.sh [seeds] [steps]` | same, with random multi-user sessions | the same, for sequences nobody thought to script |
+| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin | a page that's broken only after minification, or only in a real browser |
+
+The integration suites (Patch 34):
+
+- `test_stream_cache_live.py`: ffmpeg-generated audio through the real
+  cache HTTP server (including the Range requests Lavalink seeks with) and
+  the real loudness measurement. Catches ffmpeg output-format changes.
+- `test_ipc_client_live.py`: the real dashboard connection against an
+  in-process websocket server. Covers rejected handshakes, retries,
+  reconnecting after a drop, and a deliberate disconnect staying
+  disconnected.
+- `test_mongodb_live.py`: settings, volume, history caps and per-track
+  counters against the real MongoDB, in a `vocard_test_<random>` database
+  dropped after each test. Needs `VOCARD_TEST_MONGO_URI`.
+- `test_session_restore_live.py`: restart persistence end to end, save to
+  restore to `do_next()`, with real `Player`/`Queue`.
+- `test_direct_resolve_live.py`: the original YouTube/companion/Lavalink
+  pipeline (needs internet).
+
+When you fix a bug, add the test that would have caught it to the suite
+closest to where it lived. For the dashboard, `fuzz_sync.sh 100 80` is a good
+long run before shipping queue or sync changes.
 
 ## What's covered
 
