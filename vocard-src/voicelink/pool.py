@@ -782,3 +782,8 @@ _stream_cache.set_queued_checker(NodePool.is_video_queued)
 # MongoDBHandler._settings_listeners).
 from .mongodb import MongoDBHandler as _MongoDBHandler
 _MongoDBHandler.add_settings_listener(NodePool.apply_settings_update)
+
+# Patch 36: let the disk cache fall back to invidious-companion's direct link
+# when yt-dlp itself is blocked, instead of the song being streamed.
+from .direct_resolver import resolve_youtube_direct_url as _resolve_youtube_direct_url
+_stream_cache.set_url_resolver(_resolve_youtube_direct_url)

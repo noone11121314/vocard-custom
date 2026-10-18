@@ -28,6 +28,10 @@ technical write-up (cause, fix, files, tests) is in
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
+- Far fewer songs are streamed instead of cached: yt-dlp now has the
+  JavaScript runtime YouTube requires, and when YouTube's bot check blocks
+  yt-dlp the song is fetched through invidious-companion and cached anyway.
+  (36)
 - New songs are cached gently: background downloads are capped at about
   1 MB/s and run one at a time, the song someone is waiting for gets a
   faster lane, and downloads plus loudness analysis run at low CPU and disk

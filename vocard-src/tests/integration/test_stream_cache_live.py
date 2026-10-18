@@ -127,3 +127,158 @@ async def test_the_server_serves_cached_audio_with_range_requests(cache_dir, mon
         assert cache.gain("vidR") == pytest.approx(0.5)  # recovered from the sidecar on startup
     finally:
         await cache.stop()
+
+
+# --- Patch 36: invidious-companion fallback when yt-dlp is blocked ----------
+
+import asyncio  # noqa: E402
+import time  # noqa: E402
+
+from aiohttp import web  # noqa: E402
+
+_real_exec = asyncio.create_subprocess_exec
+
+
+class _BlockedYtDlp:
+    """yt-dlp hitting YouTube's bot check; every other command (ffmpeg) is real."""
+    returncode = 1
+
+    def __init__(self):
+        self.stdout = self._lines([])
+        self.stderr = self._lines([b"ERROR: [youtube] x: Sign in to confirm you're not a bot\n"])
+
+    @staticmethod
+    def _lines(lines):
+        class _S:
+            def __init__(self, items): self.items = list(items)
+            def __aiter__(self): return self
+            async def __anext__(self):
+                if not self.items: raise StopAsyncIteration
+                return self.items.pop(0)
+        return _S(lines)
+
+    async def wait(self): return 1
+    def kill(self): pass
+
+
+@pytest.fixture
+def blocked_ytdlp(monkeypatch):
+    async def exec_(*args, **kwargs):
+        if "yt_dlp" in args:
+            return _BlockedYtDlp()
+        return await _real_exec(*args, **kwargs)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_)
+
+
+async def _cdn(source: bytes, *, mode="range", requests=None):
+    """Stand-in for YouTube's CDN: honours Range (mode="range"), ignores it
+    (mode="full") or refuses (mode="403")."""
+    async def handler(request):
+        if requests is not None:
+            requests.append(request.headers.get("Range"))
+        if mode == "403":
+            return web.Response(status=403)
+        rng = request.headers.get("Range")
+        if mode == "full" or not rng:
+            return web.Response(body=source)
+        start, end = (int(x) for x in rng.split("=")[1].split("-"))
+        end = min(end, len(source) - 1)
+        return web.Response(status=206, body=source[start:end + 1],
+                            headers={"Content-Range": f"bytes {start}-{end}/{len(source)}"})
+    app = web.Application()
+    app.router.add_get("/videoplayback", handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = _free_port()
+    await web.TCPSite(runner, "127.0.0.1", port).start()
+    return runner, f"http://127.0.0.1:{port}/videoplayback"
+
+
+async def _resolver_for(url):
+    async def resolve(session, video_id):
+        return url
+    return resolve
+
+
+async def test_blocked_yt_dlp_falls_back_to_a_chunked_companion_download(cache_dir, tmp_path, blocked_ytdlp, monkeypatch):
+    src = tmp_path / "src.webm"
+    _tone(src, 0.9, seconds=20)
+    source = src.read_bytes()
+    requests = []
+    runner, url = await _cdn(source, requests=requests)
+    monkeypatch.setattr(stream_cache, "_url_resolver", await _resolver_for(url))
+    monkeypatch.setattr(stream_cache, "_CHUNK_BYTES", 64 * 1024)
+    try:
+        cache = StreamCache()
+        assert await cache.download("vidFB", "https://www.youtube.com/watch?v=vidFB", urgent=True) is True
+    finally:
+        await runner.cleanup()
+
+    assert (cache_dir / "vidFB.audio").read_bytes() == source
+    assert not (cache_dir / "vidFB.audio.part").exists()
+    assert len(requests) == -(-len(source) // (64 * 1024))  # one Range request per chunk
+    assert all(r and r.startswith("bytes=") for r in requests)
+    assert _db(cache.gain("vidFB")) == pytest.approx(-8.0, abs=0.1)  # measured with real ffmpeg
+    assert json_load(cache_dir / "vidFB.meta.json")["gain_version"] == 2
+
+
+async def test_fallback_works_when_the_server_ignores_range(cache_dir, tmp_path, blocked_ytdlp, monkeypatch):
+    src = tmp_path / "src.webm"
+    _tone(src, 0.5)
+    runner, url = await _cdn(src.read_bytes(), mode="full")
+    monkeypatch.setattr(stream_cache, "_url_resolver", await _resolver_for(url))
+    try:
+        assert await StreamCache().download("vidFull", "https://y/vidFull") is True
+    finally:
+        await runner.cleanup()
+    assert (cache_dir / "vidFull.audio").read_bytes() == src.read_bytes()
+
+
+async def test_a_refused_fallback_leaves_no_files_and_reports_both_errors(cache_dir, blocked_ytdlp, monkeypatch):
+    runner, url = await _cdn(b"", mode="403")
+    monkeypatch.setattr(stream_cache, "_url_resolver", await _resolver_for(url))
+    try:
+        cache = StreamCache()
+        assert await cache.download("vidNo", "https://y/vidNo") is False
+    finally:
+        await runner.cleanup()
+    error = cache._entries["vidNo"].error
+    assert "not a bot" in error and "HTTP 403" in error
+    assert list(cache_dir.glob("vidNo*")) == []
+
+
+async def test_the_fallback_respects_the_speed_cap(cache_dir, tmp_path, blocked_ytdlp, monkeypatch):
+    source = bytes(range(256)) * 1024  # 256 KiB
+    runner, url = await _cdn(source)
+    monkeypatch.setattr(stream_cache, "_url_resolver", await _resolver_for(url))
+    monkeypatch.setattr(stream_cache, "_CHUNK_BYTES", 32 * 1024)
+    monkeypatch.setattr(stream_cache, "_BACKGROUND_RATE", "512K")
+    monkeypatch.setattr(StreamCache, "_measure_gain", staticmethod(lambda *a, **k: _none()))
+    try:
+        started = time.monotonic()
+        assert await StreamCache().download("vidSlow", "https://y/vidSlow") is True
+        elapsed = time.monotonic() - started
+    finally:
+        await runner.cleanup()
+    assert elapsed >= 0.45  # 256 KiB at 512 KiB/s = 0.5s; unpaced it's a few ms
+
+
+async def _none():
+    return None
+
+
+def json_load(path):
+    import json
+    return json.loads(path.read_text())
+
+
+def test_the_image_has_the_javascript_runtime_yt_dlp_needs():
+    """Patch 36: without deno + yt-dlp-ejs, yt-dlp warns "No supported
+    JavaScript runtime" and gets incomplete/unsigned YouTube links (the random
+    403s). The deno binary lives in bin/, which the multi-stage Dockerfile
+    once silently dropped."""
+    import importlib.util
+    assert shutil.which("deno"), "deno missing from the image (Dockerfile COPY of /usr/local/bin/deno?)"
+    assert importlib.util.find_spec("yt_dlp_ejs"), "yt-dlp-ejs not installed"
+    out = subprocess.run(["deno", "--version"], capture_output=True, text=True, check=True).stdout
+    assert out.startswith("deno ")

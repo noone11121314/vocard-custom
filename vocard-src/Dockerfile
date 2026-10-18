@@ -33,6 +33,9 @@ WORKDIR /app
 
 # Copy installed Python packages from the builder stage
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+# deno (the JS runtime yt-dlp needs for YouTube, Patch 36) installs its binary
+# into bin/, not site-packages, so it has to be copied separately.
+COPY --from=builder /usr/local/bin/deno /usr/local/bin/deno
 
 # Copy the application code
 COPY . .

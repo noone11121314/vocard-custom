@@ -2126,6 +2126,53 @@ Deployed with `deploy_when_idle.sh` (nothing was playing). Tests: 6 new in
 
 ---
 
+## Patch 36 — Why some songs wouldn't download, and minimizing streaming
+
+User asked why some songs refuse to download and to minimize streaming.
+Lavalink's logs (where every load records cache vs. stream): 2026-10-18 had
+413 loads from the cache and 17 streamed from YouTube (about 4%); 10-11 had
+53 streamed of 184. A streamed song skips loudness normalization and can
+stutter.
+
+**Two causes, confirmed by experiment** (20 cached songs, yt-dlp `--test`
+in throwaway containers):
+1. **No JavaScript runtime in the image.** yt-dlp now needs one (deno by
+   default) plus its challenge solver (`yt-dlp-ejs`) for YouTube. Without
+   them every one of the 20 printed "No supported JavaScript runtime ...
+   some formats may be missing": incomplete, unsolved links, the likely
+   source of the random HTTP 403s.
+2. **YouTube's bot check on this server's IP**: "Sign in to confirm you're
+   not a bot", about 1 in 20 attempts, at random, with or without a JS
+   runtime.
+
+**Fixes:**
+- `deno==2.9.7` and `yt-dlp-ejs==0.8.0` added to `requirements.txt`. The
+  Dockerfile now also copies `/usr/local/bin/deno` from the build stage:
+  pip puts the binary in `bin/`, and the multi-stage build only copied
+  `site-packages`, so the first rebuild silently lacked it. An integration
+  test now checks the image has deno and the solver.
+- **Companion fallback into the cache** (`StreamCache._companion_attempt`,
+  registered from `pool.py` via `set_url_resolver`). When yt-dlp fails
+  (after the 403 retries), the cache fetches invidious-companion's direct
+  link, which gets past the bot check, in 1 MiB Range requests, paced to
+  the same speed cap, measures loudness and caches it like any other
+  download. Streaming only happens if both routes fail. Chunking matters:
+  one long request for these links is throttled to near playback speed
+  (2.7MB in 114s), Range requests come at full speed (under a second).
+- Live end-to-end check with the new image: 6 real songs downloaded and
+  measured, 2 of them with yt-dlp forced to fail so the real companion
+  route had to do it (2–5s each).
+
+**Not done (needs a decision):** passing YouTube account cookies to
+yt-dlp (`lavalink/cookies.txt` exists) would cut the bot checks further,
+but risks that Google account being flagged for automated use.
+
+Tests: 4 new integration tests (fallback with Range, server ignoring Range,
+refused fallback leaves no files, speed cap honoured) plus the image check;
+4 unit tests.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

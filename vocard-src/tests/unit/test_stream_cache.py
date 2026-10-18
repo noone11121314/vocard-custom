@@ -50,6 +50,9 @@ async def reset_singleton(monkeypatch, tmp_path):
     """
     await _stop_and_clear_cache()
     monkeypatch.setattr(stream_cache, "CACHE_DIR", tmp_path)
+    # pool.py registers the real invidious-companion lookup at import time;
+    # tests opt in to a fake one explicitly (Patch 36).
+    monkeypatch.setattr(stream_cache, "_url_resolver", None)
     yield
     await _stop_and_clear_cache()
 
@@ -1342,3 +1345,33 @@ def test_typical_gain_is_the_median_of_measured_songs(tmp_path):
 
 def test_typical_gain_is_none_with_nothing_measured():
     assert StreamCache().typical_gain() is None
+
+
+# --- Patch 36: invidious-companion fallback when yt-dlp is blocked
+
+
+def test_rate_strings_are_parsed_like_yt_dlp():
+    assert stream_cache._rate_bytes_per_sec("1M") == 1024 ** 2
+    assert stream_cache._rate_bytes_per_sec("500K") == 500 * 1024
+    assert stream_cache._rate_bytes_per_sec("2.5M") == 2.5 * 1024 ** 2
+    assert stream_cache._rate_bytes_per_sec("0") is None
+    assert stream_cache._rate_bytes_per_sec("") is None
+
+
+async def test_no_resolver_keeps_the_yt_dlp_error(tmp_path, monkeypatch):
+    _patch_subprocess(monkeypatch, _FakeProcess(returncode=1, stderr_lines=[b"ERROR: Sign in to confirm you're not a bot\n"]))
+    c = StreamCache()
+
+    assert await c.download("vidBlocked", "https://y/vidBlocked") is False
+    assert "not a bot" in c._entries["vidBlocked"].error
+
+
+async def test_companion_gives_no_link_keeps_both_errors(tmp_path, monkeypatch):
+    _patch_subprocess(monkeypatch, _FakeProcess(returncode=1, stderr_lines=[b"ERROR: Sign in to confirm you're not a bot\n"]))
+    monkeypatch.setattr(stream_cache, "_url_resolver", AsyncMock(return_value=None))
+    c = StreamCache()
+
+    assert await c.download("vidB2", "https://y/vidB2") is False
+    error = c._entries["vidB2"].error
+    assert "not a bot" in error and "companion" in error
+    assert not (tmp_path / "vidB2.audio").exists() and not (tmp_path / "vidB2.audio.part").exists()

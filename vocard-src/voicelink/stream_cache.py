@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 from urllib.parse import quote
 
+import aiohttp
 from aiohttp import web
 
 logger = logging.getLogger("vocard")
@@ -189,6 +190,33 @@ _is_queued_elsewhere: Callable[[str], bool] = lambda video_id: False
 def set_queued_checker(checker: Callable[[str], bool]) -> None:
     global _is_queued_elsewhere
     _is_queued_elsewhere = checker
+
+
+# Patch 36: when yt-dlp is blocked (YouTube's "Sign in to confirm you're not
+# a bot" check, about 1 in 20 attempts from this IP), fetch the audio through
+# a direct link from invidious-companion instead - which gets past the check -
+# and cache it like any other download, rather than streaming it unmeasured.
+# Registered by pool.py: direct_resolver.resolve_youtube_direct_url(session, video_id) -> url or None.
+_url_resolver = None
+# YouTube throttles one long request for these links to roughly playback
+# speed (measured: 2.7MB in 114s); 1 MiB Range requests come at full speed
+# (the same file in 3 requests, under a second).
+_CHUNK_BYTES: int = 1 << 20
+
+
+def set_url_resolver(resolver) -> None:
+    global _url_resolver
+    _url_resolver = resolver
+
+
+def _rate_bytes_per_sec(rate: str) -> Optional[float]:
+    """yt-dlp --limit-rate syntax ("1M", "500K", "2.5M") -> bytes/s; None = unlimited."""
+    if not rate or rate == "0":
+        return None
+    match = re.fullmatch(r"([\d.]+)\s*([KMG]?)i?B?", rate.strip(), re.I)
+    if not match:
+        return None
+    return float(match.group(1)) * {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}[match.group(2).upper()]
 
 
 class StreamCache:
@@ -494,9 +522,69 @@ class StreamCache:
                 logger.debug(f"[StreamCache] YouTube refused {key} (403), retrying in {delay}s")
                 entry.downloaded_bytes, entry.total_bytes = 0, None
                 await asyncio.sleep(delay)
+            if entry.error is not None and _url_resolver is not None:
+                ytdlp_error = entry.error
+                entry.error = None
+                entry.downloaded_bytes, entry.total_bytes = 0, None
+                await self._companion_attempt(key, entry, rate)
+                if entry.error is not None:
+                    entry.error = f"{ytdlp_error} | companion: {entry.error}"
         finally:
             entry.ready.set()
             self._prune()
+
+    async def _companion_attempt(self, key: str, entry: _CacheEntry, rate: str) -> None:
+        """Patch 36: downloads `key` from an invidious-companion direct link
+        in _CHUNK_BYTES Range requests, paced to `rate`, then finishes the
+        entry exactly like a yt-dlp download (gain measured, sidecar written).
+        Sets entry.error on any failure; never raises."""
+        dest = CACHE_DIR / f"{key}.audio"
+        part = CACHE_DIR / f"{key}.audio.part"
+        limit = _rate_bytes_per_sec(rate)
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=_YTDLP_TIMEOUT, sock_read=30)) as http:
+                url = await _url_resolver(http, key)
+                if not url:
+                    entry.error = "no direct link from invidious-companion"
+                    return
+                started = time.monotonic()
+                received, total = 0, None
+                with open(part, "wb") as fh:
+                    while total is None or received < total:
+                        headers = {"Range": f"bytes={received}-{received + _CHUNK_BYTES - 1}"}
+                        async with http.get(url, headers=headers) as r:
+                            if r.status not in (200, 206):
+                                entry.error = f"HTTP {r.status} from the direct link"
+                                return
+                            body = await r.read()
+                            if r.status == 200:
+                                total = len(body)  # server ignored Range: this is the whole file
+                            elif "Content-Range" in r.headers:
+                                total = int(r.headers["Content-Range"].rsplit("/", 1)[-1])
+                        if not body:
+                            break
+                        fh.write(body)
+                        received += len(body)
+                        entry.downloaded_bytes, entry.total_bytes = received, total
+                        if limit:  # pace to the same cap yt-dlp would use
+                            ahead = received / limit - (time.monotonic() - started)
+                            if ahead > 0:
+                                await asyncio.sleep(ahead)
+                if not total or received < total:
+                    entry.error = f"incomplete download ({received} of {total} bytes)"
+                    return
+            part.replace(dest)
+            entry.path = dest
+            entry.size = dest.stat().st_size
+            entry.gain = await self._measure_gain(dest, low_priority=True)
+            self._write_meta_sidecar(key, title=entry.title, gain=entry.gain)
+            logger.debug(f"[StreamCache] cached {key} via invidious-companion ({entry.title or 'no title'}), {entry.size} bytes, gain={entry.gain}")
+        except Exception as e:
+            entry.error = f"{type(e).__name__}: {e}"
+        finally:
+            part.unlink(missing_ok=True)
+            if entry.error is not None:
+                dest.unlink(missing_ok=True)
 
     async def _ytdlp_attempt(self, key: str, youtube_url: str, entry: _CacheEntry, rate: str) -> None:
         dest = CACHE_DIR / f"{key}.audio"

@@ -9,3 +9,7 @@ psutil==5.9.8
 aiohttp==3.11.12
 python-dotenv==1.1.1
 yt-dlp==2026.08.19
+# yt-dlp needs a JavaScript runtime (deno) plus its challenge solver to get
+# complete, properly signed YouTube download links (Patch 36).
+yt-dlp-ejs==0.8.0
+deno==2.9.7
