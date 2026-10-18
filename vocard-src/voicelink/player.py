@@ -1073,7 +1073,10 @@ class Player(VoiceProtocol):
     async def add_track(self, raw_tracks: Union[Track, List[Track]], *, start_time: int = 0, end_time: int = 0, at_front: bool = False, duplicate: bool = True) -> int:
         """Adds one or more tracks to the queue."""
         tracks: List[Track] = []
-        _duplicate_tracks = [] if self.queue._allow_duplicate and duplicate else [track.uri for track in self.queue._queue]
+        # Patch 40: only the current and upcoming songs count as duplicates -
+        # with duplicates turned off, a song that already played (history)
+        # could never be queued again, e.g. re-added from the History list.
+        _duplicate_tracks = [] if self.queue._allow_duplicate and duplicate else [track.uri for track in self.queue.tracks(incTrack=self.has_dequeued_track)]
         raw_tracks = raw_tracks[0] if isinstance(raw_tracks, List) and len(raw_tracks) == 1 else raw_tracks
 
         try:

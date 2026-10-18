@@ -44,6 +44,10 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- Clicking a song in History adds it to the end of the queue ("Back to" is
+  still in its menu), and "Add to queue" now appears in every song menu.
+  With duplicates turned off, songs that already played can still be
+  queued again. (40)
 - The song that's playing now also shows at the top of the History list,
   marked "Now playing". (39)
 - The queue's History button works on a new server (shows "No songs played

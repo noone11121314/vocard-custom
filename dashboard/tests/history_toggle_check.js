@@ -77,10 +77,19 @@ function initPlayer(n, pos, hasCurrent) {
       clicks += sentNow === 0 ? "" : " now-playing-click-sent-backTo";
     }
     if (wantHistory > 0) {
+      // Patch 40: clicking a played song re-adds it at the end of the queue.
       await page.evaluate(() => { window.__sent = []; });
+      const clickedId = await page.evaluate(() => $("#history-queue .track:not(.history-now-playing)").first().data("id"));
       await page.click("#history-queue .track:not(.history-now-playing) .title", { force: true });
-      const back = await page.evaluate(() => window.__sent.filter((m) => m.op === "backTo").map((m) => m.index));
-      clicks += JSON.stringify(back) === "[1]" ? "" : ` most-recent-click-sent-backTo=${JSON.stringify(back)}`;
+      const sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "addTracks" || m.op === "backTo"));
+      const wantSent = [{ op: "addTracks", tracks: [clickedId], type: "addToQueue" }];
+      clicks += JSON.stringify(sent) === JSON.stringify(wantSent) ? "" : ` click-sent=${JSON.stringify(sent).slice(0, 120)}`;
+      // ...and its menu offers Add to queue, Play next and Back to.
+      await page.click("#history-queue .track:not(.history-now-playing) > .material-symbols-outlined", { force: true });
+      await page.waitForTimeout(300);
+      const menu = await page.evaluate(() => ["context-play-add-to-queue", "context-play-next", "context-back-to"].filter((id) => !document.getElementById(id)));
+      clicks += menu.length ? ` menu-missing=${menu.join(",")}` : "";
+      await page.evaluate(() => typeof removeContextMenu === "function" && removeContextMenu());
     }
     const okVisible = state.visible === true;
     const okCards = state.cards === wantHistory;

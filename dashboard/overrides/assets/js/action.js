@@ -303,6 +303,11 @@ function buildPrefetchPiecesHtml(prefetchState) {
     return { indicatorHtml: `${tick}${spinner}`, progressHtml: progressBar }
 }
 
+// Patch 40: menu for a played song in the History list. (Also fixed: menus
+// passed "AddToQueue" but the item is keyed "addToQueue", so "Add to queue"
+// silently never appeared in the track-page and playlist menus.)
+const HISTORY_MENU = ["addToQueue", "playNext", "backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+
 function buildQueueTrackHtml(track, prefetchState, { nowPlaying = false } = {}) {
     const { indicatorHtml, progressHtml } = buildPrefetchPiecesHtml(prefetchState)
     // Patch 39: the current song at the top of the History list - marked in
@@ -1170,7 +1175,7 @@ $(document).ready(function () {
             }
 
             if ($target.hasClass("track-more")) {
-                buildContextMenu(e, ["playNow", "playNext", "AddToQueue", "getLyrics", "playlistAddTrack", "copyLink"], options)
+                buildContextMenu(e, ["playNow", "playNext", "addToQueue", "getLyrics", "playlistAddTrack", "copyLink"], options)
             } else if ($target.hasClass("track-play")) {
                 if (options.selectedTrackId != undefined) {
                     player.send({
@@ -1220,11 +1225,11 @@ $(document).ready(function () {
 
                 if ($target.is("span")) {
                     if (playlistType == "playlist" || ["link", "share"].includes(player.playlists[options.selectedPlaylistId]?.type)) {
-                        return buildContextMenu(e, ["playNow", "playNext", "AddToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
+                        return buildContextMenu(e, ["playNow", "playNext", "addToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
                     } else {
                         return buildContextMenu(
                             e,
-                            ["playNow", "playNext", "AddToQueue", "playlistRemoveTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"],
+                            ["playNow", "playNext", "addToQueue", "playlistRemoveTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"],
                             options
                         )
                     }
@@ -1373,9 +1378,14 @@ $(document).ready(function () {
                         selectedTrackIndex: $track.index("#history-queue .track:not(.history-now-playing)") + 1,
                     }
                     if ($target.is("span")) {
-                        return buildContextMenu(e, isNowPlaying ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"] : ["backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
+                        return buildContextMenu(e, isNowPlaying ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"] : HISTORY_MENU, options)
                     }
-                    if (!isNowPlaying) player.backTo(options.selectedTrackIndex)
+                    // Patch 40: clicking a played song re-adds it at the end of
+                    // the queue (it used to rewind the queue to it - still in
+                    // the ... menu as "Back to").
+                    if (!isNowPlaying) {
+                        player.send({ op: "addTracks", tracks: [options.selectedTrackId], type: "addToQueue" })
+                    }
                 }
             }
         }
@@ -1827,17 +1837,17 @@ $(document).ready(function () {
 
             if (cardType == "track") {
                 options = { selectedTrackId: cardId }
-                menuItems = ["playNow", "playNext", "AddToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+                menuItems = ["playNow", "playNext", "addToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
             } else if (cardType == "playlist") {
                 options = { selectedplaylisthref: $card.data("href") }
-                menuItems = ["AddToQueue", "playlistCreate", "copyLink"]
+                menuItems = ["addToQueue", "playlistCreate", "copyLink"]
             }
         } else if ($target.closest("#search-result-tracks .track-row").length) {
             // Case: Right-click on "#search-result-tracks .track-row"
             const trackNumber = $target.closest(".track-row").index()
             const selectedTrackId = player.searchList[trackNumber]
             options = { selectedTrackId }
-            menuItems = ["playNow", "playNext", "AddToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+            menuItems = ["playNow", "playNext", "addToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
         } else if ($target.closest('[id^="playlist-page"] .track-row').length) {
             // Case: Right-click on playlist-page ".track-row"
             const trackRow = $target.closest(".track-row")
@@ -1849,9 +1859,9 @@ $(document).ready(function () {
 
             const playlistType = player.playlists[options.selectedPlaylistId]?.type
             if (playlistType && !["link", "share"].includes(playlistType)) {
-                menuItems = ["playNow", "playNext", "AddToQueue", "playlistRemoveTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+                menuItems = ["playNow", "playNext", "addToQueue", "playlistRemoveTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
             } else {
-                menuItems = ["playNow", "playNext", "AddToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+                menuItems = ["playNow", "playNext", "addToQueue", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
             }
         } else if ($target.closest("#now-playing-section .track").length) {
             // Case: Right-click on "#now-playing-section .track"
@@ -1874,7 +1884,7 @@ $(document).ready(function () {
             }
             menuItems = track.hasClass("history-now-playing")
                 ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
-                : ["backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+                : HISTORY_MENU
         }
 
         // If menu items were determined, prevent default and build the context menu

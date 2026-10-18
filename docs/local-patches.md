@@ -2266,6 +2266,42 @@ Shipped with `dashboard/apply_js.sh` (no restart).
 
 ---
 
+## Patch 40 — Clicking a song in History re-adds it at the end of the queue
+
+User: a song re-added from the History list should go to the bottom of the
+queue. Before, clicking a History card ran "back to", which rewinds the queue
+so that song plays immediately and everything after it replays.
+
+- **Click a played song** -> `addTracks` with that song, `type:
+  "addToQueue"`: it's appended at the end, with the usual "added" toast.
+  Clicking the "Now playing" card (Patch 39) still does nothing.
+- **Its ... menu** (`HISTORY_MENU`) offers Add to queue, Play next and
+  Back to (the old rewind), plus the existing items.
+- **Upstream bug fixed on the way:** menus passed `"AddToQueue"` but the
+  item is keyed `addToQueue`, so "Add to queue" silently never appeared in
+  any song menu (search results, track page, playlists). Fixed in all 8
+  menu lists.
+- **Duplicates (bot, `Player.add_track`):** with "duplicate tracks" turned
+  off, the check covered the *whole* queue including history, so a song
+  that already played could never be queued again. It now checks only the
+  current and upcoming songs (`queue.tracks(incTrack=has_dequeued_track)`).
+  Also, `/settings duplicatetrack` treated an unset setting as "off" while
+  the player treats it as "on", so its first use on a server did nothing;
+  both now default to `True`.
+- **Race introduced by Patch 31's script loader, found by this patch's
+  browser test** (failed 2 of 5 runs): the loader loaded `action.js`, which
+  starts the dashboard, *before* `transformer.js`, which decodes songs. A
+  message that arrived in between lost its songs (e.g. the History showed 1
+  of 3). `action.js` now loads last, as with the original static tags:
+  0 failures in 10 runs.
+
+Deploy: dashboard restart (template change), bot via `deploy_when_idle.sh`.
+Tests: new `tests/unit/test_player_duplicate_tracks.py` (4; 2 fail on the
+old code); `history_toggle_check.js` checks the click sends `addTracks` and
+the menu has the three items; `browser_check.js` checks the new load order.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

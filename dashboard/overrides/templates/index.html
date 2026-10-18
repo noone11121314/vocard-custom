@@ -228,7 +228,12 @@
            if a lookup fails, load with a timestamp so it's never stale. #}
         <script>
             (function () {
-                const files = ["utils", "websocket", "objects", "action", "transformer"];
+                // Patch 40: action.js starts the dashboard (connects, handles
+                // messages) as soon as it loads, so it must come last - with
+                // transformer.js after it, songs from a message that arrived
+                // first couldn't be decoded and were dropped (a race the
+                // original static <script> tags never had).
+                const files = ["utils", "websocket", "objects", "transformer", "action"];
                 const url = (f) => "{{ url_for('static', filename='js/') }}" + f + ".min.js";
                 Promise.all(files.map((f) =>
                     fetch(url(f), { method: "HEAD", cache: "no-store" })

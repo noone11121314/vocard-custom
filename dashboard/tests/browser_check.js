@@ -29,7 +29,7 @@ const { chromium } = require("playwright");
     hardReload: await defined("hardReload"),
   };
   await browser.close();
-  const want = ["utils", "websocket", "objects", "action", "transformer"];
+  const want = ["utils", "websocket", "objects", "transformer", "action"];  // action.js last (Patch 40)
   const problems = [];
   if (errors.length) problems.push("page errors: " + errors.join(" | "));
   if (JSON.stringify(loaded) !== JSON.stringify(want)) problems.push(`scripts loaded ${JSON.stringify(loaded)}, want ${JSON.stringify(want)} in order`);

@@ -225,7 +225,9 @@ class Settings(commands.Cog, name="settings"):
     async def duplicatetrack(self, ctx: commands.Context):
         "Toggle Vocard to prevent duplicate songs from queuing."
         settings = await MongoDBHandler.get_settings(ctx.guild.id)
-        toggle = not settings.get('duplicate_track', False)
+        # Patch 40: same default as the player (True = duplicates allowed) -
+        # with False here the first toggle on a fresh server changed nothing.
+        toggle = not settings.get('duplicate_track', True)
         player: voicelink.Player = ctx.guild.voice_client
         if player:
             player.queue._allow_duplicate = toggle
