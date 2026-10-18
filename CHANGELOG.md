@@ -1,0 +1,60 @@
+# Changelog
+
+Changes made on top of upstream [Vocard](https://github.com/ChocoMeow/Vocard)
+and its dashboard. Newest first. Each entry names its patch number; the
+technical write-up (cause, fix, files, tests) is in
+[`docs/local-patches.md`](docs/local-patches.md).
+
+## Permissions and settings
+- Members with the server's DJ role are no longer refused queue edits when
+  the bot's cached copy of their roles is out of date: a refusal is
+  re-checked against Discord first. (32)
+- `/settings` and dashboard settings changes, including the DJ role, apply
+  to the running bot immediately instead of after a restart. (32)
+- Queue reordering and volume are open to every member in the channel. (2, 8)
+
+## Volume
+- The volume shows as a "NN%" pill next to the slider, highlighted while
+  dragging, with a speaker icon that follows the level. (27, 31)
+- One shared bot volume, 0–100 everywhere: dashboard, `/volume` and the
+  Discord buttons. (28)
+- The dashboard volume always matches what the bot plays, including after
+  a restart; every change is saved. (27)
+- Per-track loudness normalization to -14 LUFS, with every cached song
+  measured and boosts capped so they can't clip. (10, 26)
+
+## Playback
+- Pause and seek take effect in well under a second (Lavalink send buffer
+  back to its 400ms default). (25)
+- Every song, even the first, is fully downloaded before it plays, so
+  nothing stutters. (1, 11)
+- The queue survives a bot restart: the bot rejoins, resumes the same song
+  at the same position, and keeps the paused state. (18, 20, 23, 25)
+
+## Dashboard
+- Pages reload themselves when the connection drops, when the bot
+  restarts, or after 10+ minutes away, instead of going half-empty. (29)
+- Dashboard JS updates go live without restarting the dashboard
+  (`dashboard/apply_js.sh`). (31)
+- Multiple people's dashboards stay in sync: the loading song no longer
+  shows twice, shuffle no longer scrambles other dashboards, and remove/move
+  always hit the right song. Covered by a two-dashboard sync test. (19, 23, 26)
+- Every playback button responds instantly. (14, 16)
+- Caching progress is shown on queue cards and in Now Playing, updated
+  without disturbing drag-to-reorder. (5, 13, 15, 22)
+- Pasted links search immediately. (24)
+- Home: "Recently played" (server-wide), "Recently added" and "Recently
+  played by you"; Explore uses the server's own most-played songs. (9, 17, 21)
+- Audio cache manager and cache size display. (6, 7)
+- Spacebar no longer toggles play/pause while typing; controller button
+  labels fixed. (3, 4)
+
+## Reliability and operations
+- The bot keeps retrying its dashboard connection until it's back. (29)
+- Fixed silently dropped dashboard requests for members the bot hadn't
+  cached yet. (12)
+- Secrets live in ignored files and `.env`; redacted `*.example.*`
+  templates are committed, and the Docker image no longer contains the bot
+  token. (30)
+- Staging bot alongside production; see
+  [`docs/staging-deployment.md`](docs/staging-deployment.md).
