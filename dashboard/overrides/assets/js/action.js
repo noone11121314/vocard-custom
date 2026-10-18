@@ -1312,6 +1312,10 @@ $(document).ready(function () {
                     player.send({ op: "clearQueue", queueType: "queue" })
                     break
 
+                case "shuffle-queue":  // Patch 41: button in the queue panel
+                    player.shuffle()
+                    break
+
                 case "clear-history-queue":
                     player.send({ op: "clearQueue", queueType: "history" })
                     break

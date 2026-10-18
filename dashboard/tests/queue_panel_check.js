@@ -1,4 +1,5 @@
-// Real-Chromium check of the queue panel's History button (Patch 38), on the
+// Real-Chromium checks of the queue panel - the History button (Patches
+// 38-40) and the Shuffle button (Patch 41) - on the
 // real rendered page with the locally minified JS (see browser_check.sh). A
 // fake WebSocket lets the test play the bot: it sends the initPlayer a page
 // gets on joining a server, then clicks the History toggle.
@@ -26,32 +27,39 @@ function initPlayer(n, pos, hasCurrent) {
   };
 }
 
+async function openPage(browser, html, n, pos, hasCurrent) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    window.WebSocket = class {
+      constructor() { window.__ws = this; this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen && this.onopen(); }, 0); }
+      send(m) { (window.__sent = window.__sent || []).push(JSON.parse(m)); }
+      close() {}
+    };
+    window.WebSocket.OPEN = 1; window.WebSocket.CLOSED = 3;
+  });
+  await page.route("http://localhost:8000/__check", (r) => r.fulfill({ contentType: "text/html", body: html }));
+  await page.route(/\/static\/js\/(\w+)\.min\.js/, (r) => {
+    const local = `.min/${r.request().url().match(/\/static\/js\/(\w+)\.min\.js/)[1]}.min.js`;
+    return fs.existsSync(local) ? r.fulfill({ contentType: "application/javascript", body: fs.readFileSync(local, "utf8"), headers: { ETag: '"local"' } }) : r.continue();
+  });
+  await page.goto("http://localhost:8000/__check", { waitUntil: "load" });
+  await page.waitForFunction(() => window.__ws && window.__ws.onmessage, null, { timeout: 10000 });
+  await page.evaluate((msg) => window.__ws.onmessage({ data: JSON.stringify(msg) }), initPlayer(n, pos, hasCurrent));
+  await page.evaluate(() => { $("#screen-loader").hide(); $(".queue-container").removeClass("close"); });
+  await page.waitForTimeout(400);
+  page.__errors = errors;
+  return page;
+}
+
 (async () => {
   const html = fs.readFileSync(".min/index.html", "utf8");
   const browser = await chromium.launch();
   let failures = 0;
   for (const [name, n, pos, hasCurrent, wantHistory] of SCENARIOS) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    const errors = [];
-    page.on("pageerror", (e) => errors.push(e.message));
-    await page.addInitScript(() => {
-      window.WebSocket = class {
-        constructor() { window.__ws = this; this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen && this.onopen(); }, 0); }
-        send(m) { (window.__sent = window.__sent || []).push(JSON.parse(m)); }
-        close() {}
-      };
-      window.WebSocket.OPEN = 1; window.WebSocket.CLOSED = 3;
-    });
-    await page.route("http://localhost:8000/__check", (r) => r.fulfill({ contentType: "text/html", body: html }));
-    await page.route(/\/static\/js\/(\w+)\.min\.js/, (r) => {
-      const local = `.min/${r.request().url().match(/\/static\/js\/(\w+)\.min\.js/)[1]}.min.js`;
-      return fs.existsSync(local) ? r.fulfill({ contentType: "application/javascript", body: fs.readFileSync(local, "utf8"), headers: { ETag: '"local"' } }) : r.continue();
-    });
-    await page.goto("http://localhost:8000/__check", { waitUntil: "load" });
-    await page.waitForFunction(() => window.__ws && window.__ws.onmessage, null, { timeout: 10000 });
-    await page.evaluate((msg) => window.__ws.onmessage({ data: JSON.stringify(msg) }), initPlayer(n, pos, hasCurrent));
-    await page.evaluate(() => { $("#screen-loader").hide(); $(".queue-container").removeClass("close"); });
-    await page.waitForTimeout(400);
+    const page = await openPage(browser, html, n, pos, hasCurrent);
+    const errors = page.__errors;
     await page.click("#toggle-history-list", { force: true });
     await page.waitForTimeout(700);
     // The next player update (here: someone adds a song) must not close it.
@@ -105,6 +113,31 @@ function initPlayer(n, pos, hasCurrent) {
       (wantHistory === 0 ? ` empty-note=${state.emptyNote}` : "") + (errors.length ? ` errors=${errors.join(" | ")}` : ""));
     await page.close();
   }
+  // Patch 41: the Shuffle button in the "Next in queue" header.
+  const SHUFFLE = [
+    // name, tracks, bot position, hasCurrentTrack, should it send shuffleTrack
+    ["song playing, 4 upcoming", 5, 1, true, true],
+    ["nothing played yet, 3 queued", 3, 1, false, true],
+    ["song playing, only 2 upcoming", 3, 1, true, false],
+  ];
+  for (const [name, n, pos, hasCurrent, wantSend] of SHUFFLE) {
+    const page = await openPage(browser, html, n, pos, hasCurrent);
+    await page.evaluate(() => { window.__sent = []; });
+    const visible = await page.evaluate(() => $("#shuffle-queue-btn").is(":visible"));
+    if (process.env.SHOT_QUEUE && wantSend && hasCurrent) {
+      const box = await (await page.$(".queue-container")).boundingBox();
+      await page.screenshot({ path: process.env.SHOT_QUEUE, clip: { x: box.x, y: box.y, width: box.width, height: 420 } });
+    }
+    await page.click("#shuffle-queue-btn", { force: true });
+    await page.waitForTimeout(400);
+    const sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "shuffleTrack").length);
+    const toast = await page.evaluate(() => $(".alert-msg").length > 0);  // the dashboard's pop-up message
+    const ok = visible && (wantSend ? sent === 1 : sent === 0 && toast) && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Shuffle button - ${name}: visible=${visible} sent=${sent}${wantSend ? "" : ` toast=${toast}`}` + (page.__errors.length ? ` errors=${page.__errors.join(" | ")}` : ""));
+    await page.close();
+  }
+
   await browser.close();
   process.exit(failures ? 1 : 0);
 })();

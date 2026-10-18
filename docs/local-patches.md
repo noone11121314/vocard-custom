@@ -2302,6 +2302,29 @@ the menu has the three items; `browser_check.js` checks the new load order.
 
 ---
 
+## Patch 41 — Shuffle button in the queue panel
+
+User asked for a button to shuffle the current queue. The bottom player bar
+already had one; the queue panel's "Next in queue" header now has a
+**Shuffle** text button next to "Clear queue" (`queue.html`,
+`#shuffle-queue-btn` -> `player.shuffle()`), matching that header's
+text-button style. A shuffle icon was tried first, but the stock CSS hid it.
+
+`Player.shuffle()` had an off-by-one: it wanted `length -
+currentQueuePosition > 3`, i.e. 4 upcoming songs when nothing was current,
+while the bot shuffles 3+. It now uses `upcomingStart()`. Fewer than 3
+upcoming still shows the "not enough songs to shuffle" pop-up instead of
+sending. Non-DJs still go through the bot's shuffle vote as before.
+
+Tests: `dashboard/tests/queue_panel_check.js` (renamed from
+`history_toggle_check.js`, setup shared via `openPage()`) adds three
+real-Chromium cases: 4 upcoming sends `shuffleTrack`; 3 queued before
+anything played sends it (the off-by-one); 2 upcoming sends nothing and
+shows the pop-up. Deployed with `dashboard/restart_dashboard.sh` (template
+change; music not affected).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

@@ -40,7 +40,11 @@
         <div class="section" id="play-next-section" style="display: none">
             <div class="header">
                 <h4>{{ _("Next in queue") }}</h4>
-                <p id="clear-queue-btn">{{ _("Clear queue") }}</p>
+                {# Patch 41: shuffle the upcoming songs right from the queue panel. #}
+                <div style="display: flex; align-items: center; gap: 0.9rem;">
+                    <p id="shuffle-queue-btn" title="{{ _('Shuffle the upcoming songs') }}">{{ _("Shuffle") }}</p>
+                    <p id="clear-queue-btn">{{ _("Clear queue") }}</p>
+                </div>
             </div>
             <div class="queue" id="queue"></div>
         </div>

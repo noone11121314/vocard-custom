@@ -44,6 +44,8 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- A Shuffle button in the queue panel, next to "Clear queue"; shuffling 3
+  queued songs before pressing play works too. (41)
 - Clicking a song in History adds it to the end of the queue ("Back to" is
   still in its menu), and "Add to queue" now appears in every song menu.
   With duplicates turned off, songs that already played can still be

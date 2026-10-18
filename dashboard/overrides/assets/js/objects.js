@@ -1477,7 +1477,10 @@ class Player {
     }
 
     shuffle() {
-        if (this.queue.length - this.currentQueuePosition > 3) {
+        // Patch 41: the bot shuffles once there are 3+ upcoming songs. This
+        // was length - currentQueuePosition > 3, which wanted 4 when nothing
+        // was current (e.g. 3 songs queued before pressing play).
+        if (this.queue.length - this.upcomingStart() >= 3) {
             this.send({ op: "shuffleTrack" });
         } else {
             this.tm.showToast(
