@@ -146,3 +146,20 @@ async def test_user_history_is_read_back_for_the_dashboard(db):
     result = await getUserHistory(bot=None, data={"userId": "4242"})
 
     assert result["history"] == ["H1", "H2"]
+
+
+async def test_mute_keeps_the_saved_volume_and_unmute_restores_it(db):
+    """Patch 42: the dashboard speaker icon."""
+    from voicelink.ipc.methods import updateVolume
+    player = _bare_player()
+    await player.set_volume(60)
+    await _settle()
+
+    await updateVolume(player, MagicMock(), {"mute": True, "volume": 0})
+    await _settle()
+    assert player.volume == 0
+    assert (await _raw_settings())["volume"] == 60  # muting didn't overwrite it
+
+    await updateVolume(player, MagicMock(), {"mute": False, "volume": 50})
+    await _settle()
+    assert player.volume == 60

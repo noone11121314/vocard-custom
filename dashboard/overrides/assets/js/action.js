@@ -743,6 +743,7 @@ function setupVolumeControl() {
     const $group = $('<div class="volume-control non-essential"></div>')
     $bar.before($group)
     $group.append($bar, $value)
+    $group.next(".btn").attr("title", "Mute / unmute").css("cursor", "pointer")
     $value.removeAttr("style").removeClass("non-essential").addClass("volume-value")
 }
 
@@ -965,6 +966,23 @@ $(document).ready(function () {
             let progress = $(this).val() / 500
             $(this).css("background", `linear-gradient(to right, var(--primary) ${progress * 100}%, var(--text-muted) ${progress * 100}%)`)
             player.startTime.text(msToReadableTime(progress * player.currentTrack?.length))
+        }
+    })
+
+    // Patch 42: the speaker icon next to the volume slider mutes/unmutes the
+    // bot (it had no click handler). Mute doesn't save 0 as the server's
+    // volume, so unmute - from here or Discord's mute button - restores it.
+    // `volume` is sent too, so an older bot without mute support still does
+    // the right thing.
+    $(document).on("click", ".volume-control + .btn", function () {
+        const current = Number(player.volume) || 0
+        if (current > 0) {
+            player.volumeBeforeMute = current
+            player.volume = 0
+            player.updateVolumeView(0)
+            player.send({ op: "updateVolume", mute: true, volume: 0 })
+        } else {
+            player.send({ op: "updateVolume", mute: false, volume: player.volumeBeforeMute || 50 })
         }
     })
 

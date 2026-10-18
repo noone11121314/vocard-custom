@@ -15,19 +15,19 @@ const SCENARIOS = [
   ["first song playing, nothing before it", 3, 1, true, 0],
 ];
 
-function initPlayer(n, pos, hasCurrent) {
+function initPlayer(n, pos, hasCurrent, volume = 30) {
   return {
     op: "initPlayer", guildId: "555", userId: "111",
     users: [{ userId: "111", avatarUrl: "", name: "me" }],
     tracks: TRACKS.slice(0, n).map((trackId) => ({ trackId, requesterId: "111" })),
     repeatMode: "off", channelName: "General", currentQueuePosition: pos,
     hasCurrentTrack: hasCurrent, loadingTrackId: null, currentPosition: 0,
-    isPlaying: hasCurrent, isPaused: false, isDj: true, autoplay: false, volume: 30,
+    isPlaying: hasCurrent, isPaused: false, isDj: true, autoplay: false, volume,
     filters: [], availableFilters: [], prefetchStatuses: {}, cacheStats: { entries: 0, approxBytes: 0 },
   };
 }
 
-async function openPage(browser, html, n, pos, hasCurrent) {
+async function openPage(browser, html, n, pos, hasCurrent, volume = 30) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -46,7 +46,7 @@ async function openPage(browser, html, n, pos, hasCurrent) {
   });
   await page.goto("http://localhost:8000/__check", { waitUntil: "load" });
   await page.waitForFunction(() => window.__ws && window.__ws.onmessage, null, { timeout: 10000 });
-  await page.evaluate((msg) => window.__ws.onmessage({ data: JSON.stringify(msg) }), initPlayer(n, pos, hasCurrent));
+  await page.evaluate((msg) => window.__ws.onmessage({ data: JSON.stringify(msg) }), initPlayer(n, pos, hasCurrent, volume));
   await page.evaluate(() => { $("#screen-loader").hide(); $(".queue-container").removeClass("close"); });
   await page.waitForTimeout(400);
   page.__errors = errors;
@@ -135,6 +135,35 @@ async function openPage(browser, html, n, pos, hasCurrent) {
     const ok = visible && (wantSend ? sent === 1 : sent === 0 && toast) && page.__errors.length === 0;
     if (!ok) failures++;
     console.log(`${ok ? "PASS" : "FAIL"}  Shuffle button - ${name}: visible=${visible} sent=${sent}${wantSend ? "" : ` toast=${toast}`}` + (page.__errors.length ? ` errors=${page.__errors.join(" | ")}` : ""));
+    await page.close();
+  }
+
+  // Patch 42: the speaker icon next to the volume slider mutes / unmutes.
+  {
+    const page = await openPage(browser, html, 3, 1, true, 30);
+    await page.evaluate(() => { window.__sent = []; });
+    await page.click(".volume-control + .btn .material-symbols-outlined", { force: true });
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({
+      sent: window.__sent.filter((m) => m.op === "updateVolume"),
+      number: $("#volume-value").text(), slider: Number($("#volume-bar").val()),
+      icon: $(".volume-control").next(".btn").find(".material-symbols-outlined").first().text(),
+    }));
+    const ok = JSON.stringify(after.sent) === JSON.stringify([{ op: "updateVolume", mute: true, volume: 0 }])
+      && after.number === "0" && after.slider === 0 && after.icon === "volume_off" && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Speaker icon - mutes at 30%: sent=${JSON.stringify(after.sent)} shows ${after.number}% icon=${after.icon}`);
+    await page.close();
+  }
+  {
+    const page = await openPage(browser, html, 3, 1, true, 0);
+    await page.evaluate(() => { window.__sent = []; });
+    await page.click(".volume-control + .btn .material-symbols-outlined", { force: true });
+    await page.waitForTimeout(300);
+    const sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "updateVolume"));
+    const ok = sent.length === 1 && sent[0].mute === false && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Speaker icon - unmutes at 0%: sent=${JSON.stringify(sent)}`);
     await page.close();
   }
 

@@ -2325,6 +2325,34 @@ change; music not affected).
 
 ---
 
+## Patch 42 — The speaker icon mutes and unmutes the bot
+
+User: the speaker icon next to the volume slider didn't mute/unmute. It had
+no click handler at all; Patch 31 only changed its picture with the level.
+
+- **Dashboard** (`action.js`): clicking it at volume > 0 sends
+  `updateVolume {mute: true, volume: 0}` and shows 0% / a crossed-out
+  speaker straight away. At 0 it sends `{mute: false, volume: <volume before
+  muting, or 50>}`. The `volume` field means an older bot without mute
+  support still does the sensible thing.
+- **Bot** (`methods.updateVolume`): `mute: true` -> `set_volume(0,
+  persist=False)`, exactly like the Discord controller's mute button, so
+  the server's saved volume is kept. `mute: false` -> restore
+  `settings["volume"]`, from either place. If that saved level is itself 0
+  (slider dragged to 0), it uses the page's value, then 50.
+- It's the shared bot volume, so it mutes for everyone in the channel
+  (each listener's own Discord "User Volume" is separate - see Patch 28).
+
+Tests: 3 unit (mute doesn't persist, unmute restores, fallback when the
+saved level is 0); a real-MongoDB integration test (the saved 60 survives
+muting, unmuting restores 60); 2 real-Chromium checks in
+`queue_panel_check.js` (mute at 30%, unmute at 0%).
+
+Deploy: dashboard JS via `apply_js.sh`; the bot side rides along with the
+pending `deploy_when_idle.sh` run from Patch 40.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

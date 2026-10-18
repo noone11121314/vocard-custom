@@ -14,6 +14,8 @@ technical write-up (cause, fix, files, tests) is in
 - Queue reordering and volume are open to every member in the channel. (2, 8)
 
 ## Volume
+- The speaker icon next to the volume slider mutes and unmutes the bot;
+  unmuting (here or from Discord) brings back the saved volume. (42)
 - A song that couldn't be cached no longer plays much louder than the
   rest: random YouTube refusals are retried, a song someone is waiting for
   ignores the failure cooldown, and anything still unmeasured gets the

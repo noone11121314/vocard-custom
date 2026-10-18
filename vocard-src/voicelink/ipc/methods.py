@@ -340,6 +340,21 @@ async def clearQueue(player: Player, member: Member, data: Dict) -> None:
     await player.clear_queue(queue_type, member)
 
 async def updateVolume(player: Player, member: Member, data: Dict) -> None:
+    if "mute" in data:
+        # Patch 42: the dashboard's speaker icon - same behaviour as the
+        # Discord controller's mute button. Muting doesn't save 0 as the
+        # guild's volume, so unmuting (from either place) restores it.
+        if data["mute"]:
+            await player.set_volume(0, requester=member, persist=False)
+            return
+        saved = int(player.settings.get("volume", 100) or 0)
+        if saved <= 0:  # the saved level itself is 0 (slider dragged to 0)
+            try:
+                saved = max(1, min(100, int(data.get("volume") or 50)))
+            except (TypeError, ValueError):
+                saved = 50
+        await player.set_volume(saved, requester=member)
+        return
     try:
         volume = max(0, min(100, int(data.get("volume", 100))))  # Patch 28: 0-100, same as /volume
     except (TypeError, ValueError):

@@ -95,3 +95,37 @@ async def test_dashboard_volume_ignores_a_non_numeric_value():
     await updateVolume(player, MagicMock(), {"volume": "loud"})
 
     player.set_volume.assert_not_awaited()
+
+
+# --- Patch 42: mute/unmute from the dashboard's speaker icon
+
+
+async def test_mute_sets_zero_without_saving_it():
+    player = MagicMock(settings={"volume": 60})
+    player.set_volume = AsyncMock()
+
+    assert await updateVolume(player, MagicMock(), {"mute": True, "volume": 0}) is None
+
+    player.set_volume.assert_awaited_once()
+    assert player.set_volume.call_args.args[0] == 0
+    assert player.set_volume.call_args.kwargs["persist"] is False
+
+
+async def test_unmute_restores_the_saved_volume():
+    player = MagicMock(settings={"volume": 60})
+    player.set_volume = AsyncMock()
+
+    await updateVolume(player, MagicMock(), {"mute": False, "volume": 25})
+
+    assert player.set_volume.call_args.args[0] == 60  # the saved level, not the page's guess
+
+
+async def test_unmute_falls_back_when_the_saved_volume_is_zero():
+    player = MagicMock(settings={"volume": 0})
+    player.set_volume = AsyncMock()
+
+    await updateVolume(player, MagicMock(), {"mute": False, "volume": 25})
+    assert player.set_volume.call_args.args[0] == 25
+
+    await updateVolume(player, MagicMock(), {"mute": False})
+    assert player.set_volume.call_args.args[0] == 50
