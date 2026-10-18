@@ -112,6 +112,17 @@ def _patch_subprocess(monkeypatch, proc: _FakeProcess):
     return calls
 
 
+def _ebur128(i=None, tp=None) -> bytes:
+    """ffmpeg ebur128=peak=true stderr summary (Patch 33), as _measure_gain parses it."""
+    parts = ["[Parsed_ebur128_0 @ 0x1] Summary:", ""]
+    if i is not None:
+        parts += ["  Integrated loudness:", f"    I:         {i} LUFS", "    Threshold: -18.2 LUFS", ""]
+    parts += ["  Loudness range:", "    LRA:        16.2 LU", ""]
+    if tp is not None:
+        parts += ["  True peak:", f"    Peak:       {tp} dBFS"]
+    return "\n".join(parts).encode()
+
+
 class _FakeMeasureProcess:
     """Stand-in for the ffmpeg subprocess _measure_gain() runs (Patch 10) -
     unlike _FakeProcess (yt-dlp's stand-in, draining stdout/stderr line by
@@ -315,7 +326,7 @@ async def test_download_writes_a_title_sidecar_on_a_backfilled_reuse_too(tmp_pat
 async def test_measure_gain_computes_a_boost_for_a_quiet_track(monkeypatch):
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"input_i" : "-22.0"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-22.0"))),
     )
 
     gain = await StreamCache._measure_gain(Path("/fake/path.audio"))
@@ -327,7 +338,7 @@ async def test_measure_gain_computes_a_boost_for_a_quiet_track(monkeypatch):
 async def test_measure_gain_computes_a_cut_for_a_loud_track(monkeypatch):
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"input_i" : "-6.0"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-6.0"))),
     )
 
     gain = await StreamCache._measure_gain(Path("/fake/path.audio"))
@@ -339,7 +350,7 @@ async def test_measure_gain_computes_a_cut_for_a_loud_track(monkeypatch):
 async def test_measure_gain_clamps_a_measurement_beyond_the_db_limit(monkeypatch):
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"input_i" : "-40.0"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-40.0"))),
     )
 
     gain = await StreamCache._measure_gain(Path("/fake/path.audio"))
@@ -370,7 +381,7 @@ async def test_measure_gain_returns_none_on_unparseable_output(monkeypatch):
 async def test_measure_gain_returns_none_when_input_i_is_missing(monkeypatch):
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"output_i" : "-14.0"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128(None, "-1.0"))),
     )
 
     assert await StreamCache._measure_gain(Path("/fake/path.audio")) is None
@@ -390,7 +401,7 @@ async def test_measure_gain_returns_none_on_timeout(monkeypatch):
 async def test_download_measures_and_persists_gain_on_a_successful_download(tmp_path, monkeypatch):
     dest = tmp_path / "vid_gain.audio"
     ytdlp_proc = _FakeProcess(returncode=0, on_communicate=lambda: dest.write_bytes(b"x"))
-    measure_proc = _FakeMeasureProcess(b'{"input_i" : "-20.0"}')
+    measure_proc = _FakeMeasureProcess(_ebur128("-20.0"))
     _patch_subprocess_sequence(monkeypatch, [ytdlp_proc, measure_proc])
 
     c = StreamCache()
@@ -1075,7 +1086,7 @@ async def test_measure_gain_caps_a_boost_so_the_true_peak_stays_below_the_ceilin
     # before the -1 dBTP ceiling - boosting further would clip.
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"input_i" : "-20.0", "input_tp" : "-4.0"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-20.0", "-4.0"))),
     )
 
     gain = await StreamCache._measure_gain(Path("/fake/path.audio"))
@@ -1086,7 +1097,7 @@ async def test_measure_gain_caps_a_boost_so_the_true_peak_stays_below_the_ceilin
 async def test_measure_gain_never_boosts_a_track_already_peaking_at_the_ceiling(monkeypatch):
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"input_i" : "-20.0", "input_tp" : "-0.5"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-20.0", "-0.5"))),
     )
 
     assert await StreamCache._measure_gain(Path("/fake/path.audio")) == pytest.approx(1.0)
@@ -1095,7 +1106,7 @@ async def test_measure_gain_never_boosts_a_track_already_peaking_at_the_ceiling(
 async def test_measure_gain_peak_cap_never_affects_a_cut(monkeypatch):
     monkeypatch.setattr(
         asyncio, "create_subprocess_exec",
-        AsyncMock(return_value=_FakeMeasureProcess(b'{"input_i" : "-8.0", "input_tp" : "0.5"}')),
+        AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-8.0", "0.5"))),
     )
 
     assert await StreamCache._measure_gain(Path("/fake/path.audio")) == pytest.approx(10 ** (-6 / 20))
@@ -1157,3 +1168,109 @@ async def test_backfill_never_raises_when_measurement_fails(tmp_path, monkeypatc
     await c._backfill_gains()  # must not raise
 
     assert c.gain("x") is None
+
+
+# --- Patch 33: gentle downloads (rate caps, one background at a time, low priority)
+
+
+def _ytdlp_call(calls):
+    return next(c for c in calls if "yt_dlp" in c)
+
+
+async def test_background_download_is_rate_capped_and_low_priority(tmp_path, monkeypatch):
+    monkeypatch.setattr(stream_cache, "_BACKGROUND_RATE", "1M")
+    monkeypatch.setattr(stream_cache.shutil, "which", lambda name: f"/usr/bin/{name}")
+    c = StreamCache()
+    dest = tmp_path / "vidbg.audio"
+    calls = _patch_subprocess(monkeypatch, _FakeProcess(returncode=0, on_communicate=lambda: dest.write_bytes(b"x")))
+
+    await c.download("vidbg", "https://www.youtube.com/watch?v=vidbg")
+
+    args = _ytdlp_call(calls)
+    assert args[:6] == ("nice", "-n", "15", "ionice", "-c2", "-n7")
+    assert args[args.index("--limit-rate") + 1] == "1M"
+    assert args[-1] == "https://www.youtube.com/watch?v=vidbg"
+    measure = next(c for c in calls if "ffmpeg" in c)
+    assert measure[0] == "nice"  # the loudness pass after a download is low priority too
+
+
+async def test_urgent_download_uses_the_faster_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(stream_cache, "_URGENT_RATE", "4M")
+    c = StreamCache()
+    dest = tmp_path / "vidnow.audio"
+    calls = _patch_subprocess(monkeypatch, _FakeProcess(returncode=0, on_communicate=lambda: dest.write_bytes(b"x")))
+
+    await c.download("vidnow", "https://www.youtube.com/watch?v=vidnow", urgent=True)
+
+    args = _ytdlp_call(calls)
+    assert args[args.index("--limit-rate") + 1] == "4M"
+
+
+async def test_a_zero_rate_means_unlimited(tmp_path, monkeypatch):
+    monkeypatch.setattr(stream_cache, "_BACKGROUND_RATE", "0")
+    c = StreamCache()
+    dest = tmp_path / "vidfree.audio"
+    calls = _patch_subprocess(monkeypatch, _FakeProcess(returncode=0, on_communicate=lambda: dest.write_bytes(b"x")))
+
+    await c.download("vidfree", "https://www.youtube.com/watch?v=vidfree")
+
+    assert "--limit-rate" not in _ytdlp_call(calls)
+
+
+async def test_background_downloads_run_one_at_a_time_and_urgent_ones_skip_the_queue(tmp_path, monkeypatch):
+    c = StreamCache()
+    release = asyncio.Event()
+    started = []
+
+    class _Blocking(_FakeProcess):
+        def __init__(self, key):
+            super().__init__(returncode=0, on_communicate=lambda: (tmp_path / f"{key}.audio").write_bytes(b"x"))
+            self.key = key
+
+        async def wait(self):
+            if self.key == "bg1":
+                await release.wait()
+            return await super().wait()
+
+    async def fake_exec(*args, **kwargs):
+        if "yt_dlp" in args:
+            key = args[args.index("-o") + 1].rsplit("/", 1)[-1].split(".")[0]
+            started.append(key)
+            return _Blocking(key)
+        return _FakeMeasureProcess(_ebur128("-14.0"))
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    bg1 = asyncio.create_task(c.download("bg1", "https://y/bg1"))
+    bg2 = asyncio.create_task(c.download("bg2", "https://y/bg2"))
+    await asyncio.sleep(0.05)
+    assert started == ["bg1"]  # bg2 waits for the single background slot
+
+    assert await c.download("now1", "https://y/now1", urgent=True) is True
+    assert started == ["bg1", "now1"]  # urgent didn't wait behind the background download
+
+    release.set()
+    assert await bg1 and await bg2
+    assert started == ["bg1", "now1", "bg2"]
+
+
+async def test_measure_gain_uses_the_fast_ebur128_filter(monkeypatch):
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+        return _FakeMeasureProcess(_ebur128("-14.0", "-3.0"))
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    assert await StreamCache._measure_gain(Path("/fake/path.audio")) == pytest.approx(1.0)
+    args = calls[0]
+    assert args[args.index("-af") + 1] == "ebur128=peak=true"
+
+
+async def test_measure_gain_handles_a_silent_track(monkeypatch):
+    # ffmpeg reports -70 LUFS and a -inf true peak for silence; the boost is
+    # clamped to the +8dB limit and the missing peak never blocks it.
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=_FakeMeasureProcess(_ebur128("-70.0", "-inf"))))
+
+    assert await StreamCache._measure_gain(Path("/fake/path.audio")) == pytest.approx(10 ** (8 / 20))

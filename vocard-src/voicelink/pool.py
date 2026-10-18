@@ -451,7 +451,7 @@ class Node:
         try:
             from . import stream_cache
             downloaded = await stream_cache.prefetch_to_disk(
-                video_id, f"https://www.youtube.com/watch?v={video_id}", title
+                video_id, f"https://www.youtube.com/watch?v={video_id}", title, urgent=True
             )
             if downloaded:
                 local_url = await stream_cache.get_local_url(video_id)

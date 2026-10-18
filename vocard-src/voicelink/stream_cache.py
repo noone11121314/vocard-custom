@@ -44,6 +44,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -79,6 +80,32 @@ _MAX_TOTAL_BYTES: int = int(os.getenv("STREAM_CACHE_MAX_BYTES", str(5_000_000_00
 # falling back to yt-dlp's own best-audio selection if none of those exist for
 # a given video.
 _YTDLP_FORMAT: str = "251/250/249/140/bestaudio"
+
+# Patch 33: go easy on the machine's connection and CPU. Every download used
+# to run at full line speed with normal priority - a sharp burst per new song
+# that competed with other services on this host. Background pre-caching
+# (songs further down the queue) is capped low and runs one at a time across
+# every guild; a download someone is actively waiting on (Patch 11's
+# first-play wait) gets a higher cap so that wait stays short. yt-dlp
+# --limit-rate syntax ("1M" = 1 MiB/s); "0" or "" means unlimited.
+_BACKGROUND_RATE: str = os.environ.get("STREAM_CACHE_PREFETCH_RATE", "1M")
+_URGENT_RATE: str = os.environ.get("STREAM_CACHE_ONDEMAND_RATE", "4M")
+_BACKGROUND_CONCURRENCY: int = max(1, int(os.environ.get("STREAM_CACHE_PREFETCH_CONCURRENCY", "1")))
+
+
+def _low_priority_prefix() -> list:
+    """nice + best-effort/lowest ionice, when available - so downloads and
+    loudness analysis always yield CPU and disk to everything else here."""
+    prefix = []
+    if shutil.which("nice"):
+        prefix += ["nice", "-n", "15"]
+    if shutil.which("ionice"):
+        prefix += ["ionice", "-c2", "-n7"]
+    return prefix
+
+
+def _rate_args(rate: str) -> list:
+    return ["--limit-rate", rate] if rate and rate != "0" else []
 _YTDLP_TIMEOUT: float = 600.0  # hard cap on a single download; a stuck/throttled
 # process just means this track falls back to the on-demand path instead of
 # hanging the prefetch task forever.
@@ -172,6 +199,7 @@ class StreamCache:
         self._entries: Dict[str, _CacheEntry] = {}
         self._runner: Optional[web.AppRunner] = None
         self._backfill_task: Optional[asyncio.Task] = None
+        self._background_slots = asyncio.Semaphore(_BACKGROUND_CONCURRENCY)
 
     async def start(self) -> None:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -395,7 +423,7 @@ class StreamCache:
         total = sum(e.size for e in self._entries.values() if e.ready.is_set())
         return {"totalBytes": total, "maxBytes": _MAX_TOTAL_BYTES}
 
-    async def download(self, key: str, youtube_url: str, title: str = "") -> bool:
+    async def download(self, key: str, youtube_url: str, title: str = "", urgent: bool = False) -> bool:
         """Fully downloads `key`'s audio to disk via yt-dlp. Returns True on
         success. Idempotent/dedup'd: an already-finished (or currently
         in-flight) entry for the same key is reused rather than re-fetched -
@@ -424,15 +452,24 @@ class StreamCache:
 
         entry = _CacheEntry(view_count=1, title=title)
         self._entries[key] = entry
-        entry.task = asyncio.create_task(self._run_ytdlp(key, youtube_url, entry))
+        entry.task = asyncio.create_task(self._run_ytdlp(key, youtube_url, entry, urgent=urgent))
         await entry.task
         return entry.error is None
 
-    async def _run_ytdlp(self, key: str, youtube_url: str, entry: _CacheEntry) -> None:
+    async def _run_ytdlp(self, key: str, youtube_url: str, entry: _CacheEntry, urgent: bool = False) -> None:
+        if urgent:
+            return await self._run_ytdlp_now(key, youtube_url, entry, _URGENT_RATE)
+        # Background: wait for the (global) background slot first.
+        async with self._background_slots:
+            return await self._run_ytdlp_now(key, youtube_url, entry, _BACKGROUND_RATE)
+
+    async def _run_ytdlp_now(self, key: str, youtube_url: str, entry: _CacheEntry, rate: str) -> None:
         dest = CACHE_DIR / f"{key}.audio"
         try:
             proc = await asyncio.create_subprocess_exec(
+                *_low_priority_prefix(),
                 sys.executable, "-m", "yt_dlp",
+                *_rate_args(rate),
                 "-f", _YTDLP_FORMAT,
                 "--no-playlist",
                 "--no-warnings",
@@ -470,7 +507,7 @@ class StreamCache:
 
             entry.path = dest
             entry.size = dest.stat().st_size
-            entry.gain = await self._measure_gain(dest)
+            entry.gain = await self._measure_gain(dest, low_priority=True)
             self._write_meta_sidecar(key, title=entry.title, gain=entry.gain)
             logger.debug(
                 f"[StreamCache] cached {key} ({entry.title or 'no title'}), {entry.size} bytes, "
@@ -487,7 +524,10 @@ class StreamCache:
     @staticmethod
     async def _measure_gain(path: Path, low_priority: bool = False) -> Optional[float]:
         """Patch 10: measures `path`'s integrated loudness via a single,
-        analysis-only ffmpeg `loudnorm` pass (nothing is re-encoded or
+        analysis-only ffmpeg `ebur128` pass (Patch 33: was `loudnorm`, which
+        gives the same integrated loudness/true peak but upsamples to 192kHz
+        internally - ~4.5x slower, and this runs before an uncached song may
+        start playing). Nothing is re-encoded or
         written back - the audio file on disk is never touched) and
         returns the linear gain multiplier that would bring it to
         _LOUDNORM_TARGET_LUFS, clamped to +/-_LOUDNORM_MAX_GAIN_DB.
@@ -498,10 +538,11 @@ class StreamCache:
         download that already succeeded.
         """
         try:
-            prefix = ["nice", "-n", "15"] if low_priority and shutil.which("nice") else []
+            prefix = _low_priority_prefix() if low_priority else []
             proc = await asyncio.create_subprocess_exec(
                 *prefix, "ffmpeg", "-i", str(path),
-                "-af", f"loudnorm=I={_LOUDNORM_TARGET_LUFS}:TP=-1.0:LRA=11:print_format=json",
+                "-hide_banner", "-nostats",
+                "-af", "ebur128=peak=true",
                 "-f", "null", "-",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -511,20 +552,18 @@ class StreamCache:
             logger.debug(f"[StreamCache] loudness measurement failed to start for {path.name}: {e}")
             return None
 
-        try:
-            text = stderr.decode(errors="replace")
-            stats = json.loads(text[text.rindex("{"):text.rindex("}") + 1])
-            measured_lufs = float(stats["input_i"])
-        except (ValueError, KeyError, LookupError):
-            logger.debug(f"[StreamCache] could not parse loudnorm output for {path.name}")
+        text = stderr.decode(errors="replace")
+        summary = text[text.rfind("Summary:"):] if "Summary:" in text else ""
+        integrated = re.search(r"Integrated loudness:\s*I:\s*(-?(?:inf|[\d.]+))\s*LUFS", summary)
+        if not integrated:
+            logger.debug(f"[StreamCache] could not parse ebur128 output for {path.name}")
             return None
+        measured_lufs = float(integrated.group(1))
 
         gain_db = max(-_LOUDNORM_MAX_GAIN_DB, min(_LOUDNORM_MAX_GAIN_DB, _LOUDNORM_TARGET_LUFS - measured_lufs))
-        try:
-            true_peak = float(stats["input_tp"])
-            gain_db = min(gain_db, max(0.0, _LOUDNORM_PEAK_CEILING_DBTP - true_peak))
-        except (ValueError, KeyError, TypeError):
-            pass
+        peak = re.search(r"True peak:\s*Peak:\s*(-?(?:inf|[\d.]+))\s*dBFS", summary)
+        if peak:
+            gain_db = min(gain_db, max(0.0, _LOUDNORM_PEAK_CEILING_DBTP - float(peak.group(1))))
         return 10 ** (gain_db / 20)
 
     @staticmethod
@@ -624,7 +663,7 @@ async def _get_cache() -> StreamCache:
     return _cache
 
 
-async def prefetch_to_disk(key: str, youtube_url: str, title: str = "") -> bool:
+async def prefetch_to_disk(key: str, youtube_url: str, title: str = "", urgent: bool = False) -> bool:
     """Entry point used by Node.prefetch_direct_track(). Lazily starts the
     local proxy server on first call, then downloads (or reuses an existing
     download of) `key`'s audio to local disk via yt-dlp. Returns True once
@@ -632,7 +671,7 @@ async def prefetch_to_disk(key: str, youtube_url: str, title: str = "") -> bool:
     StreamCache.download().
     """
     cache = await _get_cache()
-    return await cache.download(key, youtube_url, title)
+    return await cache.download(key, youtube_url, title, urgent=urgent)
 
 
 async def get_progress(key: str) -> Optional[float]:

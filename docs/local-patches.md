@@ -2021,6 +2021,49 @@ the time. Tests: new `tests/unit/test_dj_permission_and_live_settings.py`
 
 ---
 
+## Patch 33 — Gentler song caching: rate caps, one background download, low priority, faster loudness
+
+User: caching new songs should spare the network so it doesn't hurt
+streaming or lag other services on the machine.
+
+**Before:** every yt-dlp download ran at full line speed with normal
+priority (about 3.4MB in under 1.4s, a sharp burst per song), and the
+loudness measurement after it used a full core for about 6–7s. That
+measurement also ran *before* an uncached song was allowed to start: an
+uncached song resumed after a restart took about 12s to start.
+
+**Now** (`voicelink/stream_cache.py`):
+- Background pre-caching (`Node.prefetch_direct_track`) is capped with
+  `--limit-rate` at `STREAM_CACHE_PREFETCH_RATE` (default `1M`, about
+  4–5s per song, still well ahead of playback). It runs one at a time
+  across **all** guilds (`STREAM_CACHE_PREFETCH_CONCURRENCY`, default 1);
+  before, it was one per player.
+- A download someone is waiting on (`Node.resolve_direct_track`, Patch
+  11's first-play wait) passes `urgent=True`, gets `STREAM_CACHE_ONDEMAND_
+  RATE` (default `4M`) and skips the background queue. `0` means
+  unlimited for either cap.
+- yt-dlp and ffmpeg run under `nice -n 15` + `ionice -c2 -n7`, so other
+  services always get CPU and disk first.
+- Loudness is measured with ffmpeg `ebur128=peak=true` instead of
+  `loudnorm`. Same integrated loudness and true peak (checked on 5 cached
+  songs, within 0.04 dB), about 4.5× faster (about 1.5s vs 6–7s), because
+  `loudnorm` upsamples to 192kHz internally.
+- Live check, background settings in the bot container: the same song
+  took 5.5s at about 1 MB/s instead of a 1.4s burst.
+- Playback itself is served from local disk, so it never competed with
+  downloads for the connection.
+
+**Deploying without interrupting anyone:** `deploy_when_idle.sh` waits
+until Lavalink reports no playing players on two checks 60s apart, then
+deploys the already-built image (staging, then production). It was used
+for this patch's second half, the `ebur128` switch; the rate caps went out
+with an earlier restart.
+
+Tests: 6 new in `tests/unit/test_stream_cache.py`; the measurement tests
+now feed real `ebur128` summary output.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

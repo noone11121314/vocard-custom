@@ -24,6 +24,10 @@ technical write-up (cause, fix, files, tests) is in
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
+- New songs are cached gently: background downloads are capped at about
+  1 MB/s and run one at a time, the song someone is waiting for gets a
+  faster lane, and downloads plus loudness analysis run at low CPU and disk
+  priority. Loudness analysis is about 4.5× faster. (33)
 - Pause and seek take effect in well under a second (Lavalink send buffer
   back to its 400ms default). (25)
 - Every song, even the first, is fully downloaded before it plays, so

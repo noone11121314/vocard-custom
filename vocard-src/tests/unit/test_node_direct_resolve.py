@@ -331,7 +331,8 @@ async def test_on_demand_resolve_waits_for_a_download_and_serves_it(node, monkey
     result = await node.resolve_direct_track("vid20", "My Song")
 
     assert result == "FROM_FRESH_DOWNLOAD"
-    prefetch_mock.assert_awaited_once_with("vid20", "https://www.youtube.com/watch?v=vid20", "My Song")
+    # Patch 33: someone is waiting on this one, so it uses the urgent (faster) path.
+    prefetch_mock.assert_awaited_once_with("vid20", "https://www.youtube.com/watch?v=vid20", "My Song", urgent=True)
     resolver_mock.assert_not_called()
     assert node._direct_resolve_cache["vid20"][1] == "FROM_FRESH_DOWNLOAD"
 
