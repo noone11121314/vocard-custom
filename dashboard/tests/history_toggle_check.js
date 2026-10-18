@@ -7,10 +7,11 @@ const { chromium } = require("playwright");
 
 const TRACKS = JSON.parse(fs.readFileSync("fixture_track_ids.json", "utf8"));
 const SCENARIOS = [
-  // name, tracks in queue, bot's currentQueuePosition, hasCurrentTrack, expected history cards
+  // name, tracks in queue, bot's currentQueuePosition, hasCurrentTrack, expected played cards
   ["new server, nothing played yet", 3, 1, false, 0],
   ["song playing, 2 played before it", 5, 3, true, 2],
   ["queue finished, 3 songs played", 3, 4, false, 3],
+  ["first song playing, nothing before it", 3, 1, true, 0],
 ];
 
 function initPlayer(n, pos, hasCurrent) {
@@ -36,7 +37,7 @@ function initPlayer(n, pos, hasCurrent) {
     await page.addInitScript(() => {
       window.WebSocket = class {
         constructor() { window.__ws = this; this.readyState = 0; setTimeout(() => { this.readyState = 1; this.onopen && this.onopen(); }, 0); }
-        send() {}
+        send(m) { (window.__sent = window.__sent || []).push(JSON.parse(m)); }
         close() {}
       };
       window.WebSocket.OPEN = 1; window.WebSocket.CLOSED = 3;
@@ -58,15 +59,40 @@ function initPlayer(n, pos, hasCurrent) {
     await page.waitForTimeout(600);
     const state = await page.evaluate(() => ({
       visible: $("#history-section").is(":visible"),
-      cards: $("#history-queue .track").length,
+      cards: $("#history-queue .track:not(.history-now-playing)").length,
+      nowPlaying: $("#history-queue .track.history-now-playing").length,
+      nowPlayingFirst: $("#history-queue .track").first().hasClass("history-now-playing"),
+      // Visible, not just present: the stock CSS sets opacity 0 on spans in queue cards.
+      nowPlayingLabelVisible: [...document.querySelectorAll("#history-queue .history-now-playing .description span, #history-queue .history-now-playing .prefetch-indicator-slot span")]
+        .every((el) => getComputedStyle(el).opacity === "1"),
       emptyNote: $("#history-queue .history-empty").length,
     }));
+    // Patch 39: clicking the now-playing card must not send "back to";
+    // clicking the most recent played song must send back-to index 1.
+    let clicks = "";
+    if (hasCurrent) {
+      await page.evaluate(() => { window.__sent = []; });
+      await page.click("#history-queue .track.history-now-playing .title", { force: true });
+      const sentNow = await page.evaluate(() => window.__sent.filter((m) => m.op === "backTo").length);
+      clicks += sentNow === 0 ? "" : " now-playing-click-sent-backTo";
+    }
+    if (wantHistory > 0) {
+      await page.evaluate(() => { window.__sent = []; });
+      await page.click("#history-queue .track:not(.history-now-playing) .title", { force: true });
+      const back = await page.evaluate(() => window.__sent.filter((m) => m.op === "backTo").map((m) => m.index));
+      clicks += JSON.stringify(back) === "[1]" ? "" : ` most-recent-click-sent-backTo=${JSON.stringify(back)}`;
+    }
     const okVisible = state.visible === true;
     const okCards = state.cards === wantHistory;
-    const okEmpty = wantHistory > 0 || state.emptyNote === 1;
-    const ok = okVisible && okCards && okEmpty && errors.length === 0;
+    const okNow = hasCurrent ? state.nowPlaying === 1 && state.nowPlayingFirst && state.nowPlayingLabelVisible : state.nowPlaying === 0;
+    const okEmpty = wantHistory > 0 || hasCurrent || state.emptyNote === 1;
+    const ok = okVisible && okCards && okNow && okEmpty && !clicks && errors.length === 0;
     if (!ok) failures++;
-    console.log(`${ok ? "PASS" : "FAIL"}  History button - ${name}: shown=${state.visible} cards=${state.cards} (want ${wantHistory})` +
+    if (process.env.SHOT && hasCurrent && wantHistory > 0) {
+      const box = await (await page.$(".queue-container")).boundingBox();
+      await page.screenshot({ path: process.env.SHOT, clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, 560) } });
+    }
+    console.log(`${ok ? "PASS" : "FAIL"}  History button - ${name}: shown=${state.visible} played=${state.cards} (want ${wantHistory}) now-playing=${state.nowPlaying}${hasCurrent && !state.nowPlayingLabelVisible ? " LABEL-INVISIBLE" : ""}${clicks}` +
       (wantHistory === 0 ? ` empty-note=${state.emptyNote}` : "") + (errors.length ? ` errors=${errors.join(" | ")}` : ""));
     await page.close();
   }

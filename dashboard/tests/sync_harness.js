@@ -98,7 +98,11 @@ lines.forEach((entry, i) => {
     {
       // Patch 38: history = everything before the current song, or, when
       // nothing is current (queue finished), everything already played.
-      const hist = ids($("#history-queue .track"));
+      const hist = ids($("#history-queue .track:not(.history-now-playing)"));
+      // Patch 39: the current song is shown at the top of the history too.
+      const nowCard = ids($("#history-queue .track.history-now-playing"));
+      const wantNow = truth.current !== null ? [truth.queue[truth.current]] : [];
+      if (!eq(nowCard, wantNow)) fail("history now-playing card", nowCard.map((x) => truth.queue.indexOf(x)), wantNow.map((x) => truth.queue.indexOf(x)));
       const wantHist = truth.queue.slice(0, truth.current !== null ? truth.current : truth.upcomingStart).reverse();
       if (!eq(hist, wantHist)) fail("history cards", hist.map((x) => truth.queue.indexOf(x)), wantHist.map((x) => truth.queue.indexOf(x)));
     }

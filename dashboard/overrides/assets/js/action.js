@@ -303,10 +303,21 @@ function buildPrefetchPiecesHtml(prefetchState) {
     return { indicatorHtml: `${tick}${spinner}`, progressHtml: progressBar }
 }
 
-function buildQueueTrackHtml(track, prefetchState) {
+function buildQueueTrackHtml(track, prefetchState, { nowPlaying = false } = {}) {
     const { indicatorHtml, progressHtml } = buildPrefetchPiecesHtml(prefetchState)
+    // Patch 39: the current song at the top of the History list - marked in
+    // the existing two-line layout (the track-info block clips a third line):
+    // "Now playing · artist" and an equalizer icon in the indicator slot.
+    // opacity: 1 because the stock CSS hides every span in a queue card until
+    // hover (that's how it hides the "..." menu button).
+    const description = nowPlaying
+        ? `<span style="color: var(--primary); font-weight: 600; opacity: 1;">Now playing</span> · ${track.author}`
+        : track.author
+    const indicator = nowPlaying
+        ? `<span class="material-symbols-outlined" title="Now playing" style="flex: none; font-size: 1.15rem; color: var(--primary); opacity: 1;">graphic_eq</span>`
+        : indicatorHtml
 
-    return `<div class="track" data-id="${track.trackId}">
+    return `<div class="track${nowPlaying ? " history-now-playing" : ""}" data-id="${track.trackId}">
         <div class="left">
             <div class="thumbnail">
                 <img class="track-img" src="${track.artworkUrl}" onerror="this.src='/static/img/notFound.png'" alt="">
@@ -314,11 +325,11 @@ function buildQueueTrackHtml(track, prefetchState) {
             </div>
             <div class="track-info">
                 <p class="title">${track.title}</a>
-                <p class="description">${track.author}</a>
+                <p class="description">${description}</a>
                 <div class="prefetch-progress-slot">${progressHtml}</div>
             </div>
         </div>
-        <span class="prefetch-indicator-slot" style="display: contents;">${indicatorHtml}</span>
+        <span class="prefetch-indicator-slot" style="display: contents;">${indicator}</span>
         <span class="material-symbols-outlined clickable">more_horiz</span>
     </div>`
 }
@@ -1353,14 +1364,18 @@ $(document).ready(function () {
             } else if ($target.closest("#history-queue").length) {
                 let $track = $target.closest(".track")
                 if ($track.length) {
+                    // Patch 39: the now-playing card isn't part of the bot's
+                    // history - it's excluded from the "back to" numbering,
+                    // and clicking it doesn't restart the song.
+                    const isNowPlaying = $track.hasClass("history-now-playing")
                     const options = {
                         selectedTrackId: $track.data("id"),
-                        selectedTrackIndex: $track.index("#history-queue .track") + 1,
+                        selectedTrackIndex: $track.index("#history-queue .track:not(.history-now-playing)") + 1,
                     }
                     if ($target.is("span")) {
-                        return buildContextMenu(e, ["backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
+                        return buildContextMenu(e, isNowPlaying ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"] : ["backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
                     }
-                    player.backTo(options.selectedTrackIndex)
+                    if (!isNowPlaying) player.backTo(options.selectedTrackIndex)
                 }
             }
         }
@@ -1855,9 +1870,11 @@ $(document).ready(function () {
             const track = $target.closest(".track")
             options = {
                 selectedTrackId: track.data("id"),
-                selectedTrackIndex: track.index("#history-queue .track") + 1,
+                selectedTrackIndex: track.index("#history-queue .track:not(.history-now-playing)") + 1,
             }
-            menuItems = ["backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+            menuItems = track.hasClass("history-now-playing")
+                ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
+                : ["backTo", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
         }
 
         // If menu items were determined, prevent default and build the context menu

@@ -44,6 +44,8 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- The song that's playing now also shows at the top of the History list,
+  marked "Now playing". (39)
 - The queue's History button works on a new server (shows "No songs played
   yet" instead of doing nothing), shows the played songs after the queue
   finishes, and no longer closes itself on the next update. (38)

@@ -2241,6 +2241,31 @@ the history cards when no song is current too (60-session fuzz in sync).
 
 ---
 
+## Patch 39 — The current song shows at the top of the History list
+
+User asked for the currently playing song to be in the history too. The
+current (playing or caching) song is now the first History card, with its
+description reading "**Now playing** · artist" and an equalizer icon in
+the indicator slot (`buildQueueTrackHtml(..., { nowPlaying: true })`,
+`.history-now-playing`).
+
+- It isn't part of the bot's history, so it's excluded from the "back to"
+  numbering (`.track:not(.history-now-playing)` in both click handlers).
+  Clicking it doesn't restart the song, and its menu has no "back to".
+- **Gotcha:** the stock dashboard CSS sets `opacity: 0` on every `<span>`
+  inside a queue card until hover (that's how it hides the "..." button).
+  The first version's label and icon were invisible for that reason, and a
+  third line (a badge) got clipped by the two-line `.track-info` block.
+  Both elements set `opacity: 1` inline.
+- Tests: `history_toggle_check.js` checks the card is first, its label is
+  actually visible (computed opacity), clicking it sends no `backTo`, and
+  clicking the most recent played song sends `backTo` 1. The sync harness
+  checks every dashboard's now-playing card matches the bot's current song.
+
+Shipped with `dashboard/apply_js.sh` (no restart).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

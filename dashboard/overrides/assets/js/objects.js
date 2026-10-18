@@ -1766,14 +1766,19 @@ class Player {
                 .map((track) => buildQueueTrackHtml(track, this.prefetchStatuses[track.trackId]))
         );
 
+        // Patch 39: the current (playing or caching) song sits at the top of
+        // the History list, marked "Now playing".
+        const nowPlaying = this.hasActiveTrack ? this.queue[this.currentQueuePosition] : null;
+        const historyHtml =
+            (nowPlaying ? buildQueueTrackHtml(nowPlaying, null, { nowPlaying: true }) : "") +
+            this.queue
+                .slice(0, historyEnd)
+                .reverse()
+                .map((track) => buildQueueTrackHtml(track))
+                .join("");
         $("#history-queue").html(
-            historyEnd > 0
-                ? this.queue
-                    .slice(0, historyEnd)
-                    .reverse()
-                    .map((track) => buildQueueTrackHtml(track))
-                    .join("")
-                : `<p class="history-empty" style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">No songs played in this server yet.</p>`
+            historyHtml ||
+            `<p class="history-empty" style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">No songs played in this server yet.</p>`
         );
     }
 
