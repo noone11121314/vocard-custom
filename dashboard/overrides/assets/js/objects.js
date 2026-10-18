@@ -1507,6 +1507,11 @@ class Player {
     // index, shuffle/clear ranges) are all relative to it. currentQueuePosition
     // alone is only right while a song is current: when idle it already
     // points at the next song, so every conversion was off by one.
+    // Patch 38: array index where "Next in queue" begins.
+    upcomingStart() {
+        return this.hasActiveTrack ? this.currentQueuePosition + 1 : this.currentQueuePosition;
+    }
+
     serverBase() {
         return this.hasActiveTrack ? this.currentQueuePosition : this.currentQueuePosition - 1;
     }
@@ -1630,7 +1635,7 @@ class Player {
         const togglePlayNextSection = () => {
             const $playNextSection = $("#play-next-section");
             const shouldShow =
-                this.queue.length - 1 > this.currentQueuePosition &&
+                this.queue.length > this.upcomingStart() &&
                 !$("#history-section").is(":visible");
             shouldShow ? $playNextSection.fadeIn() : $playNextSection.fadeOut();
         };
@@ -1640,7 +1645,6 @@ class Player {
         }
 
         this.currentTrack = this.queue[this.currentQueuePosition];
-        const $historySection = $("#history-section");
         const $nowPlayingSection = $("#now-playing-section");
 
         // Show or hide now playing section
@@ -1648,14 +1652,11 @@ class Player {
             ? $nowPlayingSection.fadeIn()
             : $nowPlayingSection.fadeOut();
 
-        // Handle history section visibility
-        if (this.currentQueuePosition < 1) {
-            $historySection.fadeOut(200, () => {
-                togglePlayNextSection();
-            });
-        } else {
-            togglePlayNextSection();
-        }
+        // Patch 38: no longer force-closes the History panel while nothing
+        // has played - it snapped shut on the next update (e.g. a song being
+        // added) right after being opened on a new server. An empty history
+        // shows its own note instead.
+        togglePlayNextSection();
 
         // Update like button and position bar
         const isTrackInPlaylist = this.playlists?.["200"]?.["tracks"]?.includes(
@@ -1752,8 +1753,13 @@ class Player {
         // currentQueuePosition is just its stale default (0) - nothing is
         // actually "current" to exclude yet, so the upcoming list should
         // start at index 0 (everything queued so far), not index 1.
-        const upcomingStart = this.hasActiveTrack ? this.currentQueuePosition + 1 : this.currentQueuePosition;
-        const historyEnd = this.hasActiveTrack ? this.currentQueuePosition : 0;
+        const upcomingStart = this.upcomingStart();
+        // Patch 38: always everything before currentQueuePosition. This was
+        // 0 whenever no song was current, so after the queue finished the
+        // History panel opened empty although songs had played. (Before
+        // anything has played currentQueuePosition is 0, so it's empty then
+        // anyway - Patch 15's concern was only where *upcoming* starts.)
+        const historyEnd = this.currentQueuePosition;
         $("#queue").html(
             this.queue
                 .slice(upcomingStart)
@@ -1761,11 +1767,13 @@ class Player {
         );
 
         $("#history-queue").html(
-            this.queue
-                .slice(0, historyEnd)
-                .reverse()
-                .map((track) => buildQueueTrackHtml(track))
-                .join("")
+            historyEnd > 0
+                ? this.queue
+                    .slice(0, historyEnd)
+                    .reverse()
+                    .map((track) => buildQueueTrackHtml(track))
+                    .join("")
+                : `<p class="history-empty" style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">No songs played in this server yet.</p>`
         );
     }
 

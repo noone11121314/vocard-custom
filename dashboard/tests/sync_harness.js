@@ -94,10 +94,12 @@ lines.forEach((entry, i) => {
     const rendered = ids($("#queue .track"));
     const wantRendered = truth.queue.slice(upcomingStart);
     if (!eq(rendered, wantRendered)) fail("'Next in queue' cards", rendered.map((x) => truth.queue.indexOf(x)), wantRendered.map((x) => truth.queue.indexOf(x)));
-    if (truth.current !== null) {
-      if (p.currentTrack?.trackId !== truth.queue[truth.current]) fail("now playing", truth.queue.indexOf(p.currentTrack?.trackId), truth.current);
+    if (truth.current !== null && p.currentTrack?.trackId !== truth.queue[truth.current]) fail("now playing", truth.queue.indexOf(p.currentTrack?.trackId), truth.current);
+    {
+      // Patch 38: history = everything before the current song, or, when
+      // nothing is current (queue finished), everything already played.
       const hist = ids($("#history-queue .track"));
-      const wantHist = truth.queue.slice(0, truth.current).reverse();
+      const wantHist = truth.queue.slice(0, truth.current !== null ? truth.current : truth.upcomingStart).reverse();
       if (!eq(hist, wantHist)) fail("history cards", hist.map((x) => truth.queue.indexOf(x)), wantHist.map((x) => truth.queue.indexOf(x)));
     }
     if (!!p.isPaused !== !!truth.isPaused) fail("paused", p.isPaused, truth.isPaused);

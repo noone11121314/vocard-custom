@@ -2211,6 +2211,36 @@ log line), integration fallback test now checks the route log too.
 
 ---
 
+## Patch 38 — History button did nothing on a new server, empty after the queue finished
+
+User: the queue panel's History toggle didn't work after joining a new
+server. Reproduced in real Chromium (`dashboard/tests/history_toggle_check.js`:
+real page, fake websocket playing the bot, real clicks). Three bugs:
+
+1. **Did nothing until a song had played:** the toggle only opened when
+   `currentQueuePosition >= 1`, with no feedback. It now always toggles,
+   and an empty history shows "No songs played in this server yet."
+2. **Empty after the queue finished:** `updateQueueList()` rendered no
+   history whenever no song was current (`historyEnd = hasActiveTrack ?
+   cqp : 0`, an unintended side effect of Patch 15). It now always renders
+   everything before `currentQueuePosition`. When idle that's every song
+   already played; "back to" indexes still line up, since the bot's
+   `backto(n)` counts back from the same position.
+3. **Snapped shut on the next update:** `updateCurrentQueuePos()` faded the
+   History panel out whenever `currentQueuePosition < 1`, so on a new server
+   it closed as soon as anything changed (e.g. a song was added). Removed.
+
+Also: the "Next in queue" section's show/hide check was off by one when
+nothing was current; it now uses the new `Player.upcomingStart()`, and so
+does `updateQueueList()`.
+
+Shipped with `dashboard/apply_js.sh`, so nothing was restarted. Tests: the
+History check runs in `dashboard/tests/browser_check.sh` (3 scenarios,
+including staying open after an update), and the sync harness now checks
+the history cards when no song is current too (60-session fuzz in sync).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

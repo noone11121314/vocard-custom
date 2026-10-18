@@ -20,4 +20,4 @@ async def r():
         print(await render_template('index.html', user=u, languages=main.LANGUAGES))
 asyncio.run(r())" > .min/index.html
 docker run --rm --network host -v "$PWD":/t -w /t mcr.microsoft.com/playwright:v1.47.0-jammy sh -c \
-  '[ -d /tmp/pw/node_modules/playwright ] || npm i --silent --no-audit --no-fund --prefix /tmp/pw playwright@1.47.0 >/dev/null 2>&1; NODE_PATH=/tmp/pw/node_modules node browser_check.js'
+  '[ -d /tmp/pw/node_modules/playwright ] || npm i --silent --no-audit --no-fund --prefix /tmp/pw playwright@1.47.0 >/dev/null 2>&1; NODE_PATH=/tmp/pw/node_modules node browser_check.js && NODE_PATH=/tmp/pw/node_modules node history_toggle_check.js'

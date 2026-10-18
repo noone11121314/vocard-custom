@@ -140,7 +140,7 @@ It loads `.env` itself (companion secret, MongoDB login) and runs:
 | integration (`tests/integration`) | real ffmpeg, MongoDB (throwaway DB), Lavalink, invidious-companion, a real websocket server | the seams between components - see below |
 | `dashboard/tests/run_sync_test.sh` | real `Player`/`Queue` code + two jsdom dashboards running the real dashboard JS | dashboards drifting out of sync with the bot; the page-reload rules |
 | `dashboard/tests/fuzz_sync.sh [seeds] [steps]` | same, with random multi-user sessions | the same, for sequences nobody thought to script |
-| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin | a page that's broken only after minification, or only in a real browser |
+| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin; a fake websocket plays the bot | a page broken only after minification or only in a real browser; the History button (Patch 38) |
 
 The integration suites (Patch 34):
 

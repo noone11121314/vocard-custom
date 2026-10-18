@@ -1443,13 +1443,16 @@ $(document).ready(function () {
                     const $historySection = $("#history-section")
                     const isHistoryQueueInvisible = !$historySection.is(":visible")
 
-                    if (isHistoryQueueInvisible && player.currentQueuePosition >= 1) {
+                    // Patch 38: always toggle. It used to do nothing at all until
+                    // a song had played (e.g. right after joining a new
+                    // server); an empty history now says so instead.
+                    if (isHistoryQueueInvisible) {
                         $playNextSection.fadeOut(200, () => {
                             $historySection.fadeIn(200)
                         })
                     } else {
                         $historySection.fadeOut(200, () => {
-                            if (player.queue.length - 1 > player.currentQueuePosition) {
+                            if (player.queue.length > player.upcomingStart()) {
                                 $playNextSection.fadeIn(200)
                             }
                         })

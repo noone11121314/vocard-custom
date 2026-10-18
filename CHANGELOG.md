@@ -44,6 +44,9 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- The queue's History button works on a new server (shows "No songs played
+  yet" instead of doing nothing), shows the played songs after the queue
+  finishes, and no longer closes itself on the next update. (38)
 - Remove/move hit the right copy of a song that's in the queue twice, and
   dashboards stay in sync after the queue has finished, after skipping a
   paused song, and with multi-song "play next". Found by a new randomized
