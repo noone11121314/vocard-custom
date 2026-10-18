@@ -1895,6 +1895,49 @@ assets/js/websocket.js`, `dashboard/overrides/assets/js/objects.js`,
 
 ---
 
+## Patch 30 — Secrets kept out of git and the Docker image; project on GitHub
+
+The project is pushed to `git@github.com:noone11121314/vocard-custom.git`
+(**public**). Nothing secret is tracked:
+
+- **Ignored** (`.gitignore`): `settings.json`, `settings.staging.json`,
+  `dashboard/settings.json`, `lavalink/application.yml` (+ `.bak*`; it holds
+  a YouTube OAuth refresh token), `lavalink/cookies.txt` (YouTube login
+  cookies), `.env`, plus runtime data (`stream_cache*`, `mongodb_data`,
+  logs, Lavalink plugins, `last-session*.json`), `.venv`, `dashboard-src`
+  (an upstream copy that isn't deployed) and test tooling output.
+  `vocard-src/settings.json` is ignored by `vocard-src/.gitignore`.
+- **Committed instead:** redacted templates `settings.example.json`,
+  `settings.staging.example.json`, `dashboard/settings.example.json`,
+  `lavalink/application.example.yml`, `.env.example`.
+- **Compose secrets** (Lavalink password, invidious-companion secret,
+  Mongo root user/password) moved from `docker-compose*.yml` into `.env`
+  (mode 600), referenced as `${VAR}`. Compose reads it automatically;
+  the resolved config hash was identical before and after, so the running
+  stack is unchanged.
+- **Docker image:** `vocard-src/settings.json` (holding the real
+  production bot token) was being baked into `vocard-patched` by the
+  Dockerfile's `COPY . .`. A new `vocard-src/.dockerignore` excludes it
+  (and `.env`, logs, caches); verified the rebuilt image has no
+  `settings.json` and no token. Running containers are unaffected because
+  `settings.json` is bind-mounted. **Never push an image built before this
+  patch.**
+- Before the first push, every real secret value (27, read from the
+  secret files without printing) was searched for in the staged files and
+  none were found. This caught the invidious-companion secret pasted into
+  `README.md` and `vocard-src/docs/testing.md` (now
+  `$INVIDIOUS_COMPANION_SECRET`, loaded from `.env`). Re-run that kind of
+  check before pushing anything that touches config or docs.
+- Known weak defaults still in use (not secret, but worth changing if any
+  of these ports are ever exposed): Lavalink `youshallnotpass`, and
+  `admin` for the dashboard/IPC password and the MongoDB root login.
+
+Commits use the GitHub no-reply address
+(`noone11121314@users.noreply.github.com`); no global git config is set on
+this machine.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs
