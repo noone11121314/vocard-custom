@@ -219,15 +219,33 @@
             }
         </script>
 
-        {# Local override (local-patches.md Patch 23/29): static JS is served with
-           a 12h browser cache, so the URLs carry a fingerprint of the code.
-           Set automatically by dashboard/restart_dashboard.sh - don't edit. #}
-        {% set asset_v = "fb560791f1" %}
-        <script type="text/javascript" src="{{ url_for('static', filename='js/utils.min.js', v=asset_v) }}"></script>
-        <script type="text/javascript" src="{{ url_for('static', filename='js/websocket.min.js', v=asset_v) }}"></script>
-        <script type="text/javascript" src="{{ url_for('static', filename='js/objects.min.js', v=asset_v) }}"></script>
-        <script type="text/javascript" src="{{ url_for('static', filename='js/action.min.js', v=asset_v) }}"></script>
-        <script type="text/javascript" src="{{ url_for('static', filename='js/transformer.min.js', v=asset_v) }}"></script>
+        {# Local override (local-patches.md Patch 23/29/31). Static JS is served
+           with a 12h browser cache and this template is cached by the server,
+           so a fixed ?v= in the URLs can only change with a dashboard restart.
+           Instead, ask for each file's current ETag (no-store, so never from
+           cache) and load it with that as ?v= - re-minified JS goes live on
+           the next page load with no dashboard restart. Loaded in order;
+           if a lookup fails, load with a timestamp so it's never stale. #}
+        <script>
+            (function () {
+                const files = ["utils", "websocket", "objects", "action", "transformer"];
+                const url = (f) => "{{ url_for('static', filename='js/') }}" + f + ".min.js";
+                Promise.all(files.map((f) =>
+                    fetch(url(f), { method: "HEAD", cache: "no-store" })
+                        .then((r) => r.headers.get("ETag") || r.headers.get("Last-Modified") || String(Date.now()))
+                        .catch(() => String(Date.now()))
+                )).then((versions) => {
+                    const load = (i) => {
+                        if (i >= files.length) return;
+                        const s = document.createElement("script");
+                        s.src = url(files[i]) + "?v=" + encodeURIComponent(versions[i].replace(/[" ]/g, ""));
+                        s.onload = s.onerror = () => load(i + 1);
+                        document.head.appendChild(s);
+                    };
+                    load(0);
+                });
+            })();
+        </script>
 
         <title>Vocard</title>
     </head>

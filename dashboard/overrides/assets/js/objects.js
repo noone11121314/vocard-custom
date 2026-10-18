@@ -1852,7 +1852,7 @@ class Player {
         if (this.isAdjustingVolume) return;
         const max = Number(this.volumeBar.attr("max")) || 100;
         this.updateBar(this.volumeBar, volume, (volume / max) * 100);
-        $("#volume-value").text(volume);
+        updateVolumeIndicator(volume);
     }
 
     updateBar(bar, time, progress) {

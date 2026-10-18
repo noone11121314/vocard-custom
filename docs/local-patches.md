@@ -1938,6 +1938,47 @@ this machine.
 
 ---
 
+## Patch 31 — Volume control design; dashboard JS updates without a restart
+
+**Design** (`action.js`: `setupVolumeControl`, `updateVolumeIndicator`):
+the Patch 27 number sat on its own, lower than the slider. It's now a
+fixed-width rounded pill reading `NN%`, grouped with the slider in a
+`.volume-control` flex row so they're centred together. It uses
+`tabular-nums` so the width doesn't jump, fills with `--primary` while
+dragging, and is muted at 0. The speaker icon next to it follows the level
+(`volume_off` at 0, `volume_down` below 50, `volume_up` otherwise). It's
+built from JS (DOM regroup plus an injected `<style>`), so no template
+change was needed for it. Checked with real-browser screenshots (playwright
++ the live dashboard's CSS, `dashboard/tests/screenshot_controls.js`) at
+0, 30 and 75 (dragging).
+
+**JS goes live without a restart:**
+- **The problem:** static JS is served with a 12h browser cache, and the
+  page template is cached by the dashboard (`TEMPLATES_AUTO_RELOAD` off).
+  So re-minifying in place wasn't enough: browsers kept the old JS until
+  the dashboard restarted with a new `?v=`.
+- **The fix:** `index.html` now loads the five scripts through a small
+  inline loader. It sends a `HEAD` for each with `cache: "no-store"` and
+  loads the script with its live `ETag` as `?v=`, in order (falls back to a
+  timestamp). The fixed `asset_v` is gone.
+- **`dashboard/apply_js.sh`:** syntax-checks the override JS and re-runs
+  the dashboard's own minifier inside the running container
+  (`import main, utils; utils.process_js_files()`; importing `utils` alone
+  hits a circular import). Then it checks that every `.min.js` was rebuilt.
+  New code reaches each browser on its next page load.
+- **Still needs `dashboard/restart_dashboard.sh`:** template (`.html`) or
+  compose changes. It no longer sets a fingerprint.
+- This patch's template change needed one dashboard restart to switch
+  pages to the loader; the bots reconnected on their own (Patch 29) and
+  weren't touched.
+
+**Files:** `dashboard/overrides/assets/js/action.js`, `objects.js`
+(`updateVolumeView`), `dashboard/overrides/templates/index.html` (loader),
+`dashboard/apply_js.sh` (new), `dashboard/restart_dashboard.sh`,
+`dashboard/tests/screenshot_controls.js` (new).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

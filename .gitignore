@@ -28,3 +28,4 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+/dashboard/tests/.preview/

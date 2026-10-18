@@ -116,8 +116,8 @@ changed, restart `vocard-dashboard` first and confirm `docker inspect
 pause to check in between:**
 
 ```bash
-dashboard/restart_dashboard.sh   # only if dashboard files changed; sets the JS
-                                 # fingerprint (asset_v) and waits for healthy
+dashboard/apply_js.sh            # dashboard JS changed: applies live, no restart
+dashboard/restart_dashboard.sh   # only if a template (.html) or compose changed
 docker compose up -d vocard
 ```
 

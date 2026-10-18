@@ -696,7 +696,52 @@ function buildCacheManagerModalHtml(data) {
     `
 }
 
+// Patch 31: volume control design - pill showing "NN%", grouped with the
+// slider, highlighted while dragging, and a speaker icon that follows the
+// level. Built from JS/CSS only (no template change), so it can be applied
+// to the running dashboard without a restart.
+function setupVolumeControl() {
+    const $bar = $("#volume-bar")
+    const $value = $("#volume-value")
+    if (!$bar.length || !$value.length || $bar.parent().hasClass("volume-control")) return
+
+    if (!document.getElementById("volume-control-style")) {
+        $("head").append(`<style id="volume-control-style">
+            .volume-control { display: flex; align-items: center; gap: 0.6rem; }
+            .volume-control .volume-bar { width: 5.5rem; }
+            .volume-control .volume-value {
+                display: inline-flex; align-items: center; justify-content: center;
+                min-width: 3rem; height: 1.5rem; padding: 0 0.55rem; box-sizing: border-box;
+                border-radius: 999px; background: var(--bg-light); color: var(--text);
+                font-size: 0.75rem; font-weight: 600; line-height: 1; letter-spacing: 0.02em;
+                font-variant-numeric: tabular-nums; user-select: none;
+                transition: background-color 0.15s ease, color 0.15s ease;
+            }
+            .volume-control .volume-value::after { content: "%"; margin-left: 1px; font-weight: 500; opacity: 0.6; }
+            .volume-control.adjusting .volume-value { background: var(--primary); color: #fff; }
+            .volume-control.adjusting .volume-value::after { opacity: 0.8; }
+            .volume-control.muted .volume-value { color: var(--text-muted); }
+        </style>`)
+    }
+
+    const $group = $('<div class="volume-control non-essential"></div>')
+    $bar.before($group)
+    $group.append($bar, $value)
+    $value.removeAttr("style").removeClass("non-essential").addClass("volume-value")
+}
+
+function updateVolumeIndicator(volume, adjusting) {
+    const v = Number(volume)
+    if (Number.isNaN(v)) return
+    $("#volume-value").text(v)
+    $(".volume-control").toggleClass("muted", v === 0)
+    if (adjusting !== undefined) $(".volume-control").toggleClass("adjusting", !!adjusting)
+    const icon = v === 0 ? "volume_off" : v < 50 ? "volume_down" : "volume_up"
+    $(".volume-control").next(".btn").find(".material-symbols-outlined").first().text(icon)
+}
+
 $(document).ready(function () {
+    setupVolumeControl()
     const player = new Player()
 
     $(document).keydown(function (e) {
@@ -891,6 +936,7 @@ $(document).ready(function () {
         // own position already moves live via the "input" handler below;
         // this just keeps player.volume itself in sync right away too.
         const volume = Number($(this).val())
+        updateVolumeIndicator(volume, false)
         player.volume = volume
         player.send({ op: "updateVolume", volume: volume })
     })
@@ -913,7 +959,7 @@ $(document).ready(function () {
         const value = Number($(this).val())
         const progress = (value / (Number($(this).attr("max")) || 100)) * 100
         $(this).css("background", `linear-gradient(to right, var(--primary) ${progress}%, var(--text-muted) ${progress}%)`)
-        $("#volume-value").text(value)
+        updateVolumeIndicator(value, true)
     })
 
     $(document).on("click", function (e) {
