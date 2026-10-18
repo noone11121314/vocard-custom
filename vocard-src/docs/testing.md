@@ -45,7 +45,7 @@ parsing/clamping/failure modes) and the `gain` field's sidecar persistence/
 `_adopt_existing_files` recovery, alongside its original yt-dlp-download
 coverage; `test_node_direct_resolve.py` also covers `Node.get_track_gain`.
 
-262 unit tests, 6 integration tests (268 total).
+269 unit tests, 6 integration tests (275 total).
 
 ## Why the tests are structured this way
 
@@ -136,7 +136,7 @@ docker run --rm --network vocard --name vocard-test --network-alias vocard-test 
 
 Omit `-m integration` filters entirely and it runs both suites (235 tests
 total) as long as it's on the `vocard` network with the companion secret set;
-otherwise the integration tests just skip and you still get the 262 unit
+otherwise the integration tests just skip and you still get the 269 unit
 results.
 
 ## What's covered

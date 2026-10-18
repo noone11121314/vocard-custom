@@ -1979,6 +1979,48 @@ change was needed for it. Checked with real-browser screenshots (playwright
 
 ---
 
+## Patch 32 — A real DJ refused queue edits; settings changes ignored until restart
+
+User: a friend who has the server's DJ role couldn't edit the queue etc.,
+and asked whether DJ settings can apply without a manual restart.
+
+**Findings:**
+- The guild has a DJ role configured (`dj` = role "DJ", created 15:36),
+  and Discord's API confirms the friend has it. In DJ-role
+  mode `Player.is_privileged()` checks `manage_guild` or the role, so the
+  bot's *cached* Member for the friend lacked the role. The dashboard
+  showed `isDj: False` and every `clearQueue` got "Only the DJ or admins
+  may use this function!". The server owner was unaffected (Manage
+  Server). The exact reason the cache was stale couldn't be confirmed
+  (the audit log isn't readable by the bot, and the running process
+  can't be inspected).
+- The "rate limited" page the friend saw was a side effect: about 25
+  refused clicks in a few seconds plus page reloads exceeded the
+  per-user IPC budget (100 credits / 5 min, `process_methods`).
+- Separately, players hold a **deep copy** of the guild settings taken
+  when the player is created. `/settings dj` (and every other
+  `/settings` command, and the dashboard's `updateSettings`) only wrote
+  Mongo, so a running player ignored the change until a restart.
+
+**Fixes:**
+- `methods._is_privileged_fresh()`: if the check fails, a DJ role is
+  configured and the cached member lacks it, fetch the member from
+  Discord (one REST call, only on a refusal), re-check, replace the stale
+  cached member, and log `DJ check: cached roles ... were stale`. Used by
+  every dashboard permission check (`require_permission`, `initPlayer`'s
+  `isDj`, the vote-gated controls, the cache-manager check).
+- `MongoDBHandler` now notifies registered listeners after each
+  successful `update_settings()`. `pool.py` registers
+  `NodePool.apply_settings_update`, which mirrors top-level `$set`/`$unset`
+  keys into that guild's live `player.settings`. **Settings changes now
+  apply to the running bot immediately, no restart.**
+
+Deploying this needed one bot restart (core code). Nothing was playing at
+the time. Tests: new `tests/unit/test_dj_permission_and_live_settings.py`
+(7).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

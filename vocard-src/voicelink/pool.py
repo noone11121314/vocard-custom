@@ -650,6 +650,23 @@ class NodePool:
         return len(self._nodes.values())
 
     @classmethod
+    def apply_settings_update(cls, guild_id: int, update: dict) -> None:
+        """Patch 32: mirrors a settings update's top-level $set/$unset keys
+        into that guild's live player.settings. Dotted keys (per-track
+        counters like botTopCounts.<key>.count) and $push/$inc aren't
+        settings a player reads, so they're skipped."""
+        for node in cls._nodes.values():
+            player = node._players.get(guild_id)
+            if player is None:
+                continue
+            for key, value in (update.get("$set") or {}).items():
+                if "." not in key:
+                    player.settings[key] = value
+            for key in (update.get("$unset") or {}):
+                if "." not in key:
+                    player.settings.pop(key, None)
+
+    @classmethod
     def is_video_queued(cls, video_id: str) -> bool:
         """True if video_id is currently playing or upcoming in *any*
         connected player's queue, across every guild and every node. Used by
@@ -753,3 +770,8 @@ class NodePool:
 # so there's no import-order/circularity concern here.
 from . import stream_cache as _stream_cache
 _stream_cache.set_queued_checker(NodePool.is_video_queued)
+
+# Patch 32: apply settings changes to already-running players (see
+# MongoDBHandler._settings_listeners).
+from .mongodb import MongoDBHandler as _MongoDBHandler
+_MongoDBHandler.add_settings_listener(NodePool.apply_settings_update)

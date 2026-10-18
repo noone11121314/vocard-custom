@@ -290,6 +290,25 @@ class MongoDBHandler:
         except Exception as e:
             raise ConnectionError(f"Failed to retrieve settings: {str(e)}")
         
+    # Patch 32: called as fn(guild_id, update) after every successful
+    # update_settings(). Players hold a deep copy of their guild's settings
+    # (taken when the player is created), so without this a /settings or
+    # dashboard change - e.g. setting a DJ role - was ignored by an already
+    # running player until the bot restarted. Registered by pool.py.
+    _settings_listeners: List = []
+
+    @classmethod
+    def add_settings_listener(cls, listener) -> None:
+        cls._settings_listeners.append(listener)
+
+    @classmethod
+    def _notify_settings_listeners(cls, guild_id: int, data: Dict) -> None:
+        for listener in cls._settings_listeners:
+            try:
+                listener(guild_id, data)
+            except Exception as e:
+                logging.getLogger("vocard.db").debug(f"settings listener failed for {guild_id}: {e}")
+
     @classmethod
     async def get_settings(
         cls, 
@@ -369,8 +388,11 @@ class MongoDBHandler:
                 settings = {"_id": guild_id, **data.get("$set", {})}
                 await cls._settings_db.insert_one(settings)
                 cls._settings_buffer[guild_id] = settings
+                cls._notify_settings_listeners(guild_id, data)
                 return True
-                
+
+            if result:
+                cls._notify_settings_listeners(guild_id, data)
             return result
             
         except Exception as e:

@@ -42,12 +42,35 @@ class PlayerMethod(SystemMethod):
         self.params: List[str] = ["player", "member", "data"]
         self.auto_connect: bool = auto_connect
 
+async def _is_privileged_fresh(player: Player, member: Member, check_user_join: bool = True) -> bool:
+    """Patch 32: player.is_privileged(), re-checked once against the member's
+    live roles from Discord when a DJ role is configured but the bot's cached
+    Member doesn't have it. The cache can lag behind role changes, and a real
+    DJ (the role checked out on Discord's side) was refused every queue edit
+    and shown as non-DJ on the dashboard. One REST call, only on a refusal;
+    the fresh member also replaces the stale cached one."""
+    if player.is_privileged(member, check_user_join=check_user_join):
+        return True
+    dj_role = player.settings.get("dj")
+    if not dj_role or any(role.id == dj_role for role in member.roles):
+        return False
+    try:
+        fresh = await member.guild.fetch_member(member.id)
+    except (NotFound, HTTPException):
+        return False
+    if not any(role.id == dj_role for role in fresh.roles):
+        return False
+    logger.info(f"DJ check: cached roles for {member} ({member.id}) were stale - Discord says they have the DJ role")
+    if hasattr(member.guild, "_add_member"):
+        member.guild._add_member(fresh)
+    return player.is_privileged(fresh, check_user_join=check_user_join)
+
 def require_permission(only_admin: bool = False):
     def decorator(func) -> callable:
         async def wrapper(player: Player, member: Member, dict: Dict) -> Optional[Dict]:
             if only_admin and not member.guild_permissions.manage_guild:
                 return error_msg("Only the admins may use this function!", user_id=member.id)
-            if not player.is_privileged(member):
+            if not await _is_privileged_fresh(player, member):
                 return error_msg("Only the DJ or admins may use this function!", user_id=member.id)
             return await func(player, member, dict)
         return wrapper
@@ -171,7 +194,7 @@ async def initPlayer(player: Player, member: Member, data: Dict) -> Dict:
         "currentPosition": 0 or player.position if player.is_playing else 0,
         "isPlaying": player.is_playing,
         "isPaused": player.is_paused,
-        "isDj": player.is_privileged(member, check_user_join=False),
+        "isDj": await _is_privileged_fresh(player, member, check_user_join=False),
         "autoplay": player.settings.get("autoplay", False),
         "volume": player.volume,
         "filters": [{"tag": filter.tag, "scope": filter.scope, "payload": filter.payload} for filter in player.filters.get_filters()],
@@ -204,7 +227,7 @@ async def getRecommendation(bot: commands.Bot, data: Dict) -> None:
     }
 
 async def skipTo(player: Player, member: Member, data: Dict) -> None:
-    if not player.is_privileged(member):
+    if not await _is_privileged_fresh(player, member):
         if player.current and member == player.current.requester:
             pass
 
@@ -225,7 +248,7 @@ async def skipTo(player: Player, member: Member, data: Dict) -> None:
     await player.stop()
 
 async def backTo(player: Player, member: Member, data: Dict) -> None:
-    if not player.is_privileged(member):
+    if not await _is_privileged_fresh(player, member):
         if player.current and member == player.current.requester:
             pass
 
@@ -292,7 +315,7 @@ async def searchAndPlay(player: Player, member: Member, data: Dict) -> None:
     await addTracks(player, member, payload)
 
 async def shuffleTrack(player: Player, member: Member, data: Dict) -> None:
-    if not player.is_privileged(member):
+    if not await _is_privileged_fresh(player, member):
         if member in player.shuffle_votes:
             return error_msg(player.get_msg('voting.voted'), user_id=member.id) 
 
@@ -325,7 +348,7 @@ async def updateVolume(player: Player, member: Member, data: Dict) -> None:
 
 async def updatePause(player: Player, member: Member, data: Dict) -> None:
     pause = data.get("pause", True)
-    if not player.is_privileged(member):
+    if not await _is_privileged_fresh(player, member):
         if pause:
             if member in player.pause_votes:
                 return error_msg(player.get_msg('voting.voted'), user_id=member.id)
@@ -350,7 +373,7 @@ async def updatePosition(player: Player, member: Member, data: Dict) -> None:
     await player.seek(position, member);
 
 async def toggleAutoplay(player: Player, member: Member, data: Dict) -> Dict:
-    if not player.is_privileged(member):
+    if not await _is_privileged_fresh(player, member):
         return error_msg(player.get_msg('permissions.missingAutoPlay'))
 
     check = data.get("status", False)
@@ -875,7 +898,7 @@ async def _require_cache_manager_permission(bot: commands.Bot, data: Dict) -> Un
         is_member_of_any = True
 
         if player := guild.voice_client:
-            privileged = player.is_privileged(member, check_user_join=False)
+            privileged = await _is_privileged_fresh(player, member, check_user_join=False)
         elif member.id in Config().bot_access_user or member.guild_permissions.manage_guild:
             privileged = True
         else:
