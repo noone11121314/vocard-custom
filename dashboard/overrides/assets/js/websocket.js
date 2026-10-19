@@ -1,11 +1,25 @@
 // Patch 29: see Socket.onopen / handleVisibilityChange / methods.closeConnection.
 const HARD_RELOAD_AFTER_HIDDEN_MS = 10 * 60 * 1000;
 
+const HARD_RELOAD_MIN_INTERVAL_MS = 60 * 1000;
+
+// Patch 43: at most one automatic reload a minute (per tab). A reconnect loop
+// - e.g. two tabs kicking each other off the server before Patch 43 - used
+// to turn into an endless reload every couple of seconds. Returns whether it
+// reloaded; when it doesn't, the page simply carries on with the new socket.
 function hardReload(reason) {
-    if (window.__reloading) return;
+    if (window.__reloading) return true;
+    let last = 0;
+    try { last = Number(sessionStorage.getItem("vocardLastAutoReload")) || 0; } catch (e) {}
+    if (Date.now() - last < HARD_RELOAD_MIN_INTERVAL_MS) {
+        console.log(`Not reloading (${reason}): already reloaded less than a minute ago`);
+        return false;
+    }
+    try { sessionStorage.setItem("vocardLastAutoReload", String(Date.now())); } catch (e) {}
     window.__reloading = true;
     console.log(`Reloading the dashboard: ${reason}`);
     window.location.reload();
+    return true;
 }
 
 class Socket {
@@ -47,8 +61,7 @@ class Socket {
             // page rather than patching state back in place. Gets fresh state
             // for every section and any newly deployed code (script URLs
             // carry a content fingerprint, see index.html's asset_v).
-            if (this.hasConnected) {
-                hardReload("reconnected after losing the connection");
+            if (this.hasConnected && hardReload("reconnected after losing the connection")) {
                 return;
             }
             this.hasConnected = true;
@@ -155,8 +168,7 @@ class Socket {
         // half-updated, the tab possibly frozen).
         const awayMs = this.hiddenAt ? Date.now() - this.hiddenAt : 0;
         this.hiddenAt = null;
-        if (awayMs >= HARD_RELOAD_AFTER_HIDDEN_MS) {
-            hardReload(`back after ${Math.round(awayMs / 60000)} min away`);
+        if (awayMs >= HARD_RELOAD_AFTER_HIDDEN_MS && hardReload(`back after ${Math.round(awayMs / 60000)} min away`)) {
             return;
         }
         if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {

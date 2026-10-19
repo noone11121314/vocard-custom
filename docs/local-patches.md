@@ -2353,6 +2353,52 @@ pending `deploy_when_idle.sh` run from Patch 40.
 
 ---
 
+## Patch 43 — Two tabs (or PC + phone) kicked each other in a reload loop; silent rate limit
+
+User: with no voice channel joined, the site showed the red "Some errors
+occurred and the dashboard could not be connected" bar and kept reloading;
+they also noticed a background tab going blank until refocused, and asked
+for "rate limited" to fail silently.
+
+**Cause** (reproduced in real Chromium, `dashboard/tests/multi_tab_check.js`
+with `MODE=stock`): the stock dashboard server keeps **one connection per
+user**. `User.connect()` closed the older one, with the reserved close code
+1004, which browsers report as a generic failure, whenever a newer one
+arrived. With the dashboard open twice, each connect kicked the other.
+Patch 29 made it relentless: background tabs no longer disconnect, and a
+reconnect reloads the page, so the two pages kicked each other every 1–3s
+(live log: 284 connect/disconnect events in 10 minutes). One tab alone was
+fine (1 load in 12s). A kicked background tab blanked until refocused
+because hidden tabs' reconnect timers are throttled.
+
+**Fixes:**
+- **Dashboard server override** `dashboard/overrides/objects.py`
+  (bind-mounted over `/app/objects.py`; changes need
+  `dashboard/restart_dashboard.sh`): `User` keeps a list of connections.
+  Messages go to all of them, a newly connected tab also gets the bots'
+  `initBot`, closing one tab leaves the others (and the user's place in the
+  player) alone, and only the last one closing does the cleanup. Every tab
+  and device works at the same time.
+- **Page reload safety net** (`websocket.js` `hardReload`): at most one
+  automatic reload a minute per tab (sessionStorage). Callers carry on
+  normally when it's skipped, so no future reconnect loop can become a
+  reload loop.
+- **Rate limit:** the page ignores `rateLimited` silently instead of
+  switching to the "rate limited" screen (the request is just dropped). The
+  bot's budget is now 600 credits per 5 minutes per user (was 100).
+
+Live check after deploy: the user's page connected once and stayed
+connected (no more churn).
+
+Tests: `dashboard/tests/test_dashboard_user.py` (8 checks on the real
+override, run in the stock dashboard image; the stock file fails the
+multi-tab ones); `multi_tab_check.js` (real Chromium, one tab then two:
+1 load each, no error bar, both show the home page; `MODE=stock`
+reproduces the loop); `reload_test.js` (+4: reload limit, silent rate
+limit). Wired into `run_sync_test.sh` / `browser_check.sh`.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

@@ -78,6 +78,7 @@ services:
         - ./dashboard/overrides/assets/js/action.js:/app/assets/js/action.js
         - ./dashboard/overrides/assets/js/objects.js:/app/assets/js/objects.js
         - ./dashboard/overrides/assets/js/websocket.js:/app/assets/js/websocket.js
+        - ./dashboard/overrides/objects.py:/app/objects.py
         - ./dashboard/overrides/templates/controller.html:/app/templates/controller.html
         - ./dashboard/overrides/templates/queue.html:/app/templates/queue.html
         - ./dashboard/overrides/templates/index.html:/app/templates/index.html

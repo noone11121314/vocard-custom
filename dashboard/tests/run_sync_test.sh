@@ -15,3 +15,6 @@ docker run --rm -v /root/vocard/vocard-src:/app -v "$PWD":/tests -w /app vocard-
 docker run --rm -v "$PWD":/t -w /t node:20-slim sh -c \
   '[ -d node_modules/jsdom ] || npm install --silent --no-audit --no-fund jsdom@24.1.3 jquery@3.7.1 >/dev/null; node sync_harness.js .scripts .stream.jsonl'
 docker run --rm -v "$PWD":/t -w /t node:20-slim node reload_test.js .scripts | grep -E "^(PASS|FAIL)"
+# Patch 43: the dashboard server override (several tabs/devices per user).
+docker run --rm -v "$PWD/../overrides/objects.py:/app/objects.py:ro" -v "$PWD/../settings.json:/app/settings.json:ro" \
+  -v "$PWD:/tests:ro" -w /app ghcr.io/chocomeow/vocard-dashboard:latest python /tests/test_dashboard_user.py

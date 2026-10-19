@@ -1074,7 +1074,9 @@ async def process_methods(ipc_client: IPCClient, bot: commands.Bot, data: Dict) 
         RATELIMIT_COUNTER[user_id] = {"time": time.time(), "count": 0}
     
     else:
-        if RATELIMIT_COUNTER[user_id]["count"] >= 100:
+        # Patch 43: 600 (was 100) credits per 5 minutes - normal use, even with
+        # several tabs open, never gets near it; still stops a runaway page.
+        if RATELIMIT_COUNTER[user_id]["count"] >= 600:
             return await ipc_client.send({"op": "rateLimited", "userId": str(user_id)})
         RATELIMIT_COUNTER[user_id]["count"] += method.credit
 

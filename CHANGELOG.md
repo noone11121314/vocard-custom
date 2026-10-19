@@ -46,6 +46,10 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- The dashboard works in several tabs or on several devices at once; they
+  used to kick each other off in an endless reload loop with a red error
+  bar, and a background tab went blank. "Rate limited" no longer takes
+  over the page. (43)
 - A Shuffle button in the queue panel, next to "Clear queue"; shuffling 3
   queued songs before pressing play works too. (41)
 - Clicking a song in History adds it to the end of the queue ("Back to" is

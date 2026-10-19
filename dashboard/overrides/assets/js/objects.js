@@ -212,8 +212,10 @@ const methods = {
         player.waitForBotToReturn(lostBotId);
     },
 
+    // Patch 43: fail silently - the request was simply dropped. The full-page
+    // "rate limited" screen was more disruptive than the dropped request.
     rateLimited: function (player, data) {
-        changePage("rate-limited");
+        console.debug("A dashboard request was rate-limited by the bot and dropped.");
     },
 
     botNotFound: function (player, data) {
@@ -1334,7 +1336,12 @@ class Player {
         const data = JSON.parse(msg);
         const op = data.op;
         if (this.waitingForBotReturn && ["initBot", "initUser", "initPlayer"].includes(op)) {
-            return hardReload("the bot is back");
+            if (hardReload("the bot is back")) return;
+            // Reloaded too recently (Patch 43): stop waiting and carry on with
+            // this message instead of ignoring the bot.
+            this.waitingForBotReturn = false;
+            clearInterval(this.botReturnProbe);
+            this.botReturnProbe = null;
         }
         const validMethods = Object.keys(methods);
 

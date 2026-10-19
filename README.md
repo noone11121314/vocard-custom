@@ -31,7 +31,7 @@ vocard/
 ├── cache_report.sh            cached vs streamed songs per day
 ├── vocard-src/                bot source -> vocard-patched image (docs/, tests/)
 ├── dashboard/
-│   ├── overrides/             JS + templates bind-mounted over the stock dashboard
+│   ├── overrides/             JS, templates and objects.py bind-mounted over the stock dashboard
 │   ├── tests/                 sync harness, fuzz, reload and real-browser checks
 │   ├── apply_js.sh            ship JS changes with no restart
 │   └── restart_dashboard.sh   restart for template/compose changes

@@ -22,9 +22,10 @@ function page() {
   inject("$.fn.sortable = function () { return this; };");
   for (const f of ["utils.js", "websocket.js", "objects.js", "transformer.js", "action.js"]) inject(fs.readFileSync(path.join(dir, f), "utf8"));
   const reloads = [];
+  const realHardReload = w.hardReload;
   w.hardReload = (reason) => reloads.push(reason);
   inject("window.__p = new Player();");
-  return { w, player: w.__p, sockets, reloads };
+  return { w, player: w.__p, sockets, reloads, realHardReload };
 }
 const open = (s) => { s.readyState = 1; s.onopen(); };
 
@@ -64,5 +65,24 @@ const open = (s) => { s.readyState = 1; s.onopen(); };
   player.socket.hiddenAt = Date.now() - 11 * 60 * 1000;
   state = "visible"; player.socket.handleVisibilityChange();
   check("back after 11 minutes reloads", reloads.length === 1);
+}
+// 4. Patch 43: at most one automatic reload a minute, so a reconnect loop can
+//    never become a reload loop.
+{
+  const { w, realHardReload } = page();
+  w.location.reload = () => {};
+  check("first automatic reload goes ahead", realHardReload("test") === true);
+  w.__reloading = false;
+  check("a second one within a minute is skipped", realHardReload("test") === false);
+  w.sessionStorage.setItem("vocardLastAutoReload", String(Date.now() - 61 * 1000));
+  check("after a minute it's allowed again", realHardReload("test") === true);
+}
+// 5. Patch 43: "rate limited" is silent - no full-page "rate limited" screen.
+{
+  const { w, player } = page();
+  const pages = [];
+  w.changePage = (p) => pages.push(p);
+  player.handleMessage(JSON.stringify({ op: "rateLimited", userId: "1" }));
+  check("a rate-limited request doesn't switch to the rate-limited page", !pages.includes("rate-limited"));
 }
 process.exit(failures ? 1 : 0);
