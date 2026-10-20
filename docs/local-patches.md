@@ -2539,7 +2539,8 @@ library"; a token connection wins if a user has both):
 - **Pairing, from Discord** (`/cantus link`): `settings.json` -> `"cantus":
   {"url", "app_key"}` (the bot's key, made by a Cantus admin). `POST
   /link/start` -> the bot sends the Cantus link (valid 10 minutes), polls `GET
-  /link/{code}` every 3s until "linked" / "expired". Calls go to the
+  /link/{code}` every 3s until "linked" / "denied" / "expired" (a 404 -
+  Cantus restarted and forgot the code - counts as expired). Calls go to the
   configured server with the app key + `X-Cantus-Discord-User: <id>`; `409
   not_linked` if the user hasn't allowed it. Without `cantus` settings,
   `/cantus link` points to the dashboard instead.
@@ -2618,7 +2619,7 @@ which `main.py` does only when `settings.json` -> `version` differs from
 registered (the bot writes it back). Not yet tried end to end against the
 real Cantus.
 
-Tests: `tests/unit/test_patch46_cantus.py` (42): headers for both modes,
+Tests: `tests/unit/test_patch46_cantus.py` (44): headers for both modes,
 409 not-linked, unconfigured pairing makes no calls, search limit/offset,
 pairing pending -> linked and expired/unknown codes, disconnect forgets
 everything, queued track metadata with no link inside, song lookup, link
@@ -2629,7 +2630,8 @@ never logs the link, `Player.play()` sends the fresh track; token connect
 stores and uses the token, a bad token isn't stored, status/replies never
 contain the token, 8 private/internal addresses refused, malformed addresses
 refused, normalization, a play link on another server refused, the resolver
-refuses names pointing inside, log redaction. Real MongoDB: connections and
+refuses names pointing inside, log redaction (`cfa_` tokens and `cfk_` app
+keys), Deny on the pairing page stops the wait. Real MongoDB: connections and
 gains stored apart from the user record, replaced not duplicated.
 `dashboard/tests/cantus_check.js` (real Chromium, 11 checks): status on
 opening Settings, prefilled server, error shown, Save sends once and clears

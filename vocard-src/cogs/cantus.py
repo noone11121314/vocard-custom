@@ -93,6 +93,8 @@ class Cantus(commands.Cog, name="cantus"):
         result = await cantus.wait_for_link(pairing["code"])
         if result.get("status") == "linked":
             text = f"Linked to Cantus account **{result.get('username') or '?'}**. Try `/cantus play`."
+        elif result.get("status") == "denied":
+            text = "Linking was denied on Cantus - nothing was connected."
         else:
             text = "That link expired before it was allowed - run `/cantus link` again."
         try:

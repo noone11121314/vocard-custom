@@ -305,12 +305,13 @@ async def start_link(discord_id: int, discord_name: str) -> Dict[str, Any]:
 
 
 async def link_status(code: str) -> Dict[str, Any]:
-    """{status: "pending"|"linked"|"expired", username?}"""
+    """{status: "pending"|"linked"|"denied"|"expired", username?}"""
     return await api("GET", f"/link/{quote(code, safe='')}", account=_pairing_account())
 
 
 async def wait_for_link(code: str, timeout: float = 600, interval: float = 3) -> Dict[str, Any]:
-    """Polls until the user pressed Allow, the code expired or `timeout`."""
+    """Polls until the user pressed Allow or Deny, the code expired (or
+    Cantus restarted and forgot it: 404) or `timeout`."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -319,7 +320,7 @@ async def wait_for_link(code: str, timeout: float = 600, interval: float = 3) ->
             if e.status == 404:
                 return {"status": "expired"}
             state = {"status": "pending"}  # a hiccup: keep waiting
-        if state.get("status") in ("linked", "expired"):
+        if state.get("status") in ("linked", "denied", "expired"):
             return state
         await asyncio.sleep(interval)
     return {"status": "expired"}

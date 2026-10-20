@@ -416,3 +416,13 @@ async def test_the_dashboard_explains_a_refused_server(fake):
     from voicelink.ipc.methods import cantusConnect
     bad = await cantusConnect(None, {"userId": str(STRANGER), "server": "http://10.0.0.1", "token": GOOD_TOKEN})
     assert bad["ok"] is False and "public" in bad["message"] and not bad["connected"]
+
+
+async def test_pairing_stops_when_the_user_presses_deny(fake):
+    fake.pairing["DENY"] = ["pending", "denied"]
+    assert (await cantus.wait_for_link("DENY", timeout=5, interval=0))["status"] == "denied"
+
+
+def test_app_keys_are_masked_in_logs_too():
+    from voicelink.ipc.client import _redact
+    assert "cfk_secretkey" not in _redact("Authorization Bearer cfk_secretkey")

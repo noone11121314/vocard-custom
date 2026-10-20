@@ -12,14 +12,14 @@ from .methods import process_methods
 # Patch 46: a Cantus token typed into the dashboard arrives here; keep it
 # (and anything else shaped like a secret field) out of the debug log.
 _SECRET_FIELD = re.compile(r"""(['"]?(?:token|app_key|password)['"]?\s*[:=]\s*\\?['"])[^'"\\]*""", re.IGNORECASE)
-_CANTUS_TOKEN = re.compile(r"cfa_[A-Za-z0-9_\-]+")
+_CANTUS_TOKEN = re.compile(r"cf[ak]_[A-Za-z0-9_\-]+")  # personal tokens and app keys
 
 
 def _redact(message) -> str:
     text = str(message)
     if "cantusConnect" in text:
         return "<cantusConnect message - not logged, it carries a token>"
-    text = _CANTUS_TOKEN.sub("cfa_…", text)
+    text = _CANTUS_TOKEN.sub(lambda m: m.group(0)[:4] + "…", text)
     return _SECRET_FIELD.sub(r"\1…", text)
 
 class IPCClient:
