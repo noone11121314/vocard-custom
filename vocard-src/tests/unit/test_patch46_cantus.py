@@ -508,3 +508,71 @@ async def test_the_owner_sees_the_admin_box_with_only_a_key_hint(fake, monkeypat
 def test_app_key_messages_from_the_dashboard_are_never_logged():
     from voicelink.ipc.client import _redact
     assert "zzz" not in _redact({"op": "cantusAppSave", "url": "https://x", "appKey": "zzz"})
+
+
+# --- the one dashboard form (cantusSave) ---------------------------------------
+
+def _dj(monkeypatch, is_dj):
+    monkeypatch.setattr("voicelink.ipc.methods._require_cache_manager_permission", AsyncMock(return_value=1 if is_dj else {"op": "errorMsg"}))
+
+
+async def test_a_member_only_pastes_a_token_and_the_admins_server_is_used(fake, allow_localhost, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    server = cantus.base_url()  # the fixture's settings.json server = what admins set
+    reply = await cantusSave(_bot(set()), {"userId": str(STRANGER), "server": "https://ignored.example", "token": GOOD_TOKEN})
+    assert reply["ok"] and reply["connected"] and fake.stored[STRANGER]["server"] == server
+    assert "admin" not in reply and GOOD_TOKEN not in repr(reply)
+
+
+async def test_a_member_cannot_set_the_app_key_through_the_form(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    Config({"client_id": 1})
+    reply = await cantusSave(_bot(set()), {"userId": str(FRIEND), "server": "https://x.example", "appKey": APP_KEY})
+    assert reply["ok"] is False and fake.saved_app == {} and fake.calls == []
+
+
+async def test_an_admin_saves_server_key_and_token_in_one_go(fake, allow_localhost, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, True)
+    server = cantus.base_url()
+    Config({"client_id": 1})
+    reply = await cantusSave(_bot(set()), {"userId": str(STRANGER), "server": server, "appKey": APP_KEY, "token": GOOD_TOKEN})
+    assert reply["ok"] and "App key saved" in reply["message"] and "connected as" in reply["message"]
+    assert fake.saved_app["app_key"] == APP_KEY and fake.stored[STRANGER]["token"] == GOOD_TOKEN
+    assert reply["admin"]["keyHint"] == "test…-key" and APP_KEY not in repr(reply) and GOOD_TOKEN not in repr(reply)
+
+
+async def test_an_admin_can_share_just_the_server_address(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, True)
+    Config({"client_id": 1})
+    reply = await cantusSave(_bot(set()), {"userId": str(FRIEND), "server": "music.example.com/x"})
+    assert reply["ok"] and "server address saved" in reply["message"].lower()
+    assert cantus.base_url() == "https://music.example.com" and not cantus.is_configured()
+    assert fake.saved_app == {"url": "https://music.example.com", "saved_at": fake.saved_app["saved_at"]}
+
+
+async def test_moving_the_server_rechecks_the_saved_key_there(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, True)
+    server = cantus.base_url()
+    Config({"client_id": 1})
+    await cantus.save_app(server, APP_KEY)
+    fake.calls.clear()
+    reply = await cantusSave(_bot(set()), {"userId": str(FRIEND), "server": server.replace("127.0.0.1", "localhost")})
+    assert reply["ok"] and cantus.base_url().startswith("http://localhost")
+    assert fake.calls[-1][3] == f"Bearer {APP_KEY}"  # checked with the saved key, nothing retyped
+
+
+async def test_nothing_typed_is_reported(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    reply = await cantusSave(_bot(set()), {"userId": str(FRIEND), "server": cantus.base_url()})
+    assert reply["ok"] is False and "token" in reply["message"]
+
+
+def test_the_combined_form_is_never_logged():
+    from voicelink.ipc.client import _redact
+    assert "zzz" not in _redact({"op": "cantusSave", "server": "https://x", "appKey": "zzz", "token": "zzz"})

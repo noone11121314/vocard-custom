@@ -1650,29 +1650,17 @@ $(document).ready(function () {
             // Patch 46: Cantus connect / disconnect. The token field is
             // cleared as soon as it's sent; it's never filled back in.
             if ($target.closest("#cantus-save").length) {
+                // One Save for the whole form: whatever was typed is sent once,
+                // then the key/token fields are cleared (never filled back in).
                 const server = $("#cantus-server").val().trim()
-                const token = $("#cantus-token").val().trim()
-                if (!server || !token) {
-                    return $("#cantus-message").removeClass("error").addClass("error").text("Enter the server address and a token.")
-                }
-                $("#cantus-token").val("")
-                $("#cantus-message").removeClass("error").text("Checking…")
-                return player.send({ op: "cantusConnect", server, token })
-            }
-            if ($target.closest("#cantus-app-save").length) {
-                const url = $("#cantus-app-url").val().trim()
                 const appKey = $("#cantus-app-key").val().trim()
-                if (!url || !appKey) {
-                    return $("#cantus-admin-message").addClass("error").text("Enter the server address and the app key.")
-                }
-                $("#cantus-app-key").val("")
-                $("#cantus-admin-message").removeClass("error").text("Checking…")
-                player.cantusAdminPending = true
-                return player.send({ op: "cantusAppSave", url, appKey })
+                const token = $("#cantus-token").val().trim()
+                $("#cantus-app-key, #cantus-token").val("")
+                $("#cantus-message").removeClass("error").text("Checking…")
+                return player.send({ op: "cantusSave", server, appKey, token })
             }
             if ($target.closest("#cantus-app-remove").length) {
-                $("#cantus-admin-message").removeClass("error").text("Removing…")
-                player.cantusAdminPending = true
+                $("#cantus-message").removeClass("error").text("Removing…")
                 return player.send({ op: "cantusAppRemove" })
             }
             if ($target.closest("#cantus-disconnect").length) {

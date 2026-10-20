@@ -17,7 +17,7 @@ _CANTUS_TOKEN = re.compile(r"cf[ak]_[A-Za-z0-9_\-]+")  # personal tokens and app
 
 def _redact(message) -> str:
     text = str(message)
-    if "cantusConnect" in text or "cantusAppSave" in text:
+    if "cantusConnect" in text or "cantusAppSave" in text or "cantusSave" in text:
         return "<Cantus credential message - not logged>"
     text = _CANTUS_TOKEN.sub(lambda m: m.group(0)[:4] + "…", text)
     return _SECRET_FIELD.sub(r"\1…", text)

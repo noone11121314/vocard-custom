@@ -92,9 +92,9 @@ self-reloading dashboard pages, and no secrets in git or the image.
 Members can play their own songs and playlists from a Cantus Flaccus server
 (`/cantus play`, `/cantus playlist`). Each member connects once, either way:
 
-- **Dashboard -> Settings -> Cantus:** their Cantus server address and a
-  personal token (Cantus -> Account -> Connect other apps -> Create token,
-  starts with `cfa_`). Only public server addresses are accepted.
+- **Dashboard -> Settings -> Cantus:** paste a personal token (Cantus ->
+  Account -> Connect other apps -> Create token, starts with `cfa_`). The
+  server address is the one an admin saved there (only public addresses).
 - **`/cantus link` in Discord:** the bot sends a Cantus link (valid 10
   minutes) to open while signed in, then press **Allow**. Needs the bot's app
   key (a Cantus admin: Admin -> Apps -> New app "Vocard") in `settings.json`:
@@ -104,8 +104,9 @@ Members can play their own songs and playlists from a Cantus Flaccus server
   ```
 
   Never commit it (`settings.json` is ignored). Or paste it in the
-  dashboard: Settings -> Cantus -> Bot app key (shown to the bot's owner,
-  DJs and server admins); it works at once, no restart.
+  dashboard: Settings -> Cantus shows the bot's owner, DJs and server admins
+  an extra app key field (masked once saved, can't be read back); it works
+  at once, no restart.
 
 `/cantus unlink` (or Disconnect in the dashboard) disconnects; revoking the
 token in Cantus cuts Vocard off at once; `/cantus help` repeats the steps.

@@ -401,31 +401,42 @@ const methods = {
         let state;
         if (data.connected) {
             const songs = data.songs != null ? ` (${text(data.songs)} songs)` : "";
-            const how = data.mode === "token" ? `token ${text(data.tokenHint)} on ${text(data.server)}` : "linked from Discord";
+            const how = data.mode === "token" ? "with your personal token" : "linked from Discord";
             state = `Connected as <b>${text(data.username || "?")}</b>${songs} - ${how}`;
-            if (data.problem === "token_revoked") state += "<br>That token isn't valid any more - save a new one.";
+            if (data.problem === "token_revoked") state += "<br>That token isn't valid any more - paste a new one.";
         } else {
-            state = "Not connected.";
+            state = "Not connected - paste your personal token below.";
         }
         $("#cantus-state").html(state);
         $("#cantus-disconnect").toggle(!!data.connected);
-        if (!$("#cantus-server").val()) $("#cantus-server").val(data.server || data.defaultServer || "");
-        // A reply to the owner's app-key form puts its message there, not
-        // under the personal token form.
-        const target = player.cantusAdminPending ? "#cantus-admin-message" : "#cantus-message";
-        player.cantusAdminPending = false;
-        $("#cantus-message, #cantus-admin-message").removeClass("error").text("");
-        if (data.message !== undefined) $(target).toggleClass("error", data.ok === false).text(data.message);
 
-        // Owner, DJs and server admins: the bot's app key (cfk_…<last 4> only).
-        $("#cantus-admin").toggle(!!data.admin);
-        if (data.admin) {
-            $("#cantus-admin-state").html(data.admin.configured
-                ? `App key <b>${text(data.admin.keyHint)}</b> on ${text(data.admin.url)} - /cantus link is on.`
-                : "No app key yet - /cantus link is off.");
-            $("#cantus-app-remove").toggle(!!data.admin.configured);
-            if (!$("#cantus-app-url").val()) $("#cantus-app-url").val(data.admin.url || $("#cantus-server").val() || "");
+        // Saved secrets only ever arrive as a masked hint, shown as
+        // placeholder text: there's nothing in the field to read or copy.
+        const masked = (hint) => (hint ? `${hint.slice(0, 4)}••••••••${hint.slice(-4)} (saved - paste a new one to replace)` : "");
+        $("#cantus-token").attr("placeholder", (data.mode === "token" && masked(data.tokenHint)) || "cfa_…");
+
+        const admin = data.admin;
+        const shared = (admin && admin.url) || data.defaultServer || "";
+        const $server = $("#cantus-server");
+        // Fill it in when the section opens; a reply to Save keeps what was
+        // typed (an error must not wipe the address someone just entered).
+        if (!$server.is(":focus") && (data.message === undefined || !$server.val() || (!admin && data.defaultServer))) {
+            $server.val((data.mode === "token" && data.server) || shared);
         }
+        // Members just paste a token: the server is the one the admins saved.
+        $server.prop("readonly", !admin && !!data.defaultServer);
+
+        $("#cantus-app-row, #cantus-app-howto, #cantus-admin-state").toggle(!!admin);
+        if (admin) {
+            $("#cantus-app-key").attr("placeholder", masked(admin.keyHint) || "cfk_…");
+            $("#cantus-admin-state").html(admin.configured ? "App key saved - /cantus link is on for everyone." : "No app key yet - /cantus link is off.");
+            $("#cantus-app-remove").toggle(!!admin.configured);
+        } else {
+            $("#cantus-app-remove").hide();
+        }
+
+        $("#cantus-message").removeClass("error").text("");
+        if (data.message !== undefined) $("#cantus-message").toggleClass("error", data.ok === false).text(data.message);
     },
 
     // Patch 45: one page of the Full history. Ignores replies for a tab the

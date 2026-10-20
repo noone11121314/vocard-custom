@@ -2545,16 +2545,30 @@ library"; a token connection wins if a user has both):
   not_linked` if the user hasn't allowed it. Without `cantus` settings,
   `/cantus link` points to the dashboard instead.
 
-**App key from the dashboard** (user: "anything on the webpage to paste
-the admin app key?", then "those who also have the DJ role"): Settings ->
-Cantus has a "Bot app key" box, shown only to the bot's owner on Discord
-(`bot.is_owner`), `bot_access_user`s, and DJs / server admins in any server
-the bot shares with them (the cache manager's check). The key is bot-wide, so
-any of them sets it for every server. Save checks it against the server (a
-made-up pairing code: 404 = key accepted, 401/403 = refused), stores it in
-Mongo `CantusConfig` and uses it at once (`_app_override`, loaded again at
-startup; wins over settings.json) - no restart. The page shows `cfk_…<last
-4>` only; `cantusAppSave` messages are never logged.
+**One form on the dashboard** (user: paste the admin app key on the
+webpage; DJs too; "3 fields, server url, admin app key, personal token ...
+auto filled, except the admin app key is censored and can't be seen or
+copied"; "normal users would only need to paste the personal token"):
+Settings -> Cantus is a single form, saved with one `cantusSave` call
+(server, appKey, token - each optional):
+- **Members** see the server read-only (the one the admins saved) and paste
+  only their personal token. If no admin saved a server yet, they type it.
+- **The bot's owner** (`bot.is_owner`), `bot_access_user`s and **DJs /
+  server admins in any server the bot shares with them** (the cache
+  manager's check) also get the **app key** field. The key is bot-wide, so
+  any of them sets it for every server. Save checks it against the server (a
+  made-up pairing code: 404 = key accepted, 401/403 = refused), stores it in
+  Mongo `CantusConfig` and uses it at once (`_app_override`, loaded again at
+  startup; wins over settings.json) - no restart. An admin can also save just
+  the server address (before having a key), and changing the address alone
+  re-checks the saved key there. A member sending an app key is refused.
+- **Saved secrets never come back to the page.** The key and token fields
+  stay empty and only show a masked hint as placeholder text
+  (`cfk_••••••••1234 (saved - paste a new one to replace)`), so there is
+  nothing to read, select or copy, even in the browser's developer tools.
+  Both fields clear as soon as Save sends them. An error reply keeps the
+  server address that was typed. `cantusSave` / `cantusAppSave` /
+  `cantusConnect` messages are never logged.
 
 **Only public servers** (user-given addresses, user's choice of "any
 server"): a server typed in the dashboard could otherwise make the bot (or
@@ -2630,7 +2644,7 @@ which `main.py` does only when `settings.json` -> `version` differs from
 registered (the bot writes it back). Not yet tried end to end against the
 real Cantus.
 
-Tests: `tests/unit/test_patch46_cantus.py` (51): headers for both modes,
+Tests: `tests/unit/test_patch46_cantus.py` (58): headers for both modes,
 409 not-linked, unconfigured pairing makes no calls, search limit/offset,
 pairing pending -> linked and expired/unknown codes, disconnect forgets
 everything, queued track metadata with no link inside, song lookup, link
@@ -2644,12 +2658,18 @@ refused, normalization, a play link on another server refused, the resolver
 refuses names pointing inside, log redaction (`cfa_` tokens and `cfk_` app
 keys), Deny on the pairing page stops the wait; the app key: saved and used
 at once, a wrong one refused and not saved, survives a restart, removable,
-DJ/owner only, the page gets only a hint, never logged. Real MongoDB: connections and
+DJ/owner only, the page gets only a hint, never logged; the one form: a
+member only pastes a token (the admins' server is used), a member can't set
+the key, an admin saves server + key + token at once, an admin can share just
+the server, moving the server re-checks the saved key, nothing typed. Real MongoDB: connections and
 gains stored apart from the user record, replaced not duplicated.
-`dashboard/tests/cantus_check.js` (real Chromium, 11 checks): status on
-opening Settings, prefilled server, error shown, Save sends once and clears
-the token field, connected state with only `cfa_…9876`, the token appears
-nowhere on the page, Disconnect.
+`dashboard/tests/cantus_check.js` (real Chromium, 20 checks): a member sees
+no app key field and a read-only server, bad token error, Save sends just the
+token, saved token masked in the placeholder only, connected state,
+Disconnect; an admin sees all three fields, bad key error, one Save sends all
+three, fields cleared, key masked, neither secret anywhere on the page;
+another admin sees it all filled in with the key masked and nothing to
+select or copy; Remove app key.
 
 ---
 

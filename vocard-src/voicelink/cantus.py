@@ -111,12 +111,13 @@ def app_key_hint() -> str:
     return f"{key[:4]}…{key[-4:]}" if key else ""
 
 
-async def save_app(url: str, app_key: str) -> None:
+async def save_app(url: str, app_key: Optional[str] = None) -> None:
     """Dashboard (admins): checks the key against that server, then saves it.
+    No key given: keep the saved one (e.g. only the server address changed).
     Cantus has no "who am I" for apps, so ask for a pairing code that can't
     exist: a valid key gets 404, a wrong one 401/403."""
     server = normalize_server(url)
-    app_key = (app_key or "").strip()
+    app_key = (app_key or "").strip() or str(_settings().get("app_key") or "")
     if not app_key or len(app_key) > 512 or any(c.isspace() for c in app_key):
         raise CantusError(400, "bad_key")
     try:
@@ -130,6 +131,16 @@ async def save_app(url: str, app_key: str) -> None:
     await MongoDBHandler.set_cantus_app({"url": server, "app_key": app_key, "saved_at": time.time()})
     _app_override.clear()
     _app_override.update({"url": server, "app_key": app_key})
+
+
+async def save_server(url: str) -> None:
+    """Dashboard (admins): just the shared server address, before (or
+    without) an app key - members then only paste their personal token."""
+    server = normalize_server(url)
+    from .mongodb import MongoDBHandler
+    saved = await MongoDBHandler.get_cantus_app() or {}
+    await MongoDBHandler.set_cantus_app({**{k: v for k, v in saved.items() if k != "_id"}, "url": server, "saved_at": time.time()})
+    _app_override["url"] = server
 
 
 async def remove_app() -> None:

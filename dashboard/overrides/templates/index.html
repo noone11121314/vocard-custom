@@ -577,6 +577,8 @@
                             #cantus-settings .cantus-state { margin-top: 10px; }
                             #cantus-settings .cantus-message.error { color: #ff6b6b; }
                             #cantus-settings .cantus-howto { opacity: 0.7; font-size: 0.9em; margin-top: 10px; max-width: 520px; }
+                            #cantus-settings label { font-size: 0.85em; opacity: 0.8; margin-bottom: -6px; }
+                            #cantus-settings input[readonly] { opacity: 0.6; cursor: default; }
                         </style>
                         <div class="header">
                             <div class="sub-title">
@@ -585,32 +587,35 @@
                             </div>
                         </div>
                         <p class="cantus-state" id="cantus-state">{{ _("Checking…") }}</p>
+                        <p class="cantus-state" id="cantus-admin-state" style="display: none"></p>
+                        <!-- One form. Members only paste their personal token (the server
+                             is the one the admins saved, read-only). The bot's owner, DJs
+                             and server admins also see the app key row, which turns on
+                             /cantus link for everyone. Saved keys/tokens never come back to
+                             the page - their fields only show a masked hint as placeholder
+                             text, so they can't be seen or copied. (cantusSave) -->
                         <div class="cantus-fields" id="cantus-form">
+                            <label for="cantus-server">{{ _("Cantus server") }}</label>
                             <input type="url" id="cantus-server" placeholder="https://your-cantus-server" autocomplete="off" />
+                            <div class="cantus-fields" id="cantus-app-row" style="display: none; margin-top: 0">
+                                <label for="cantus-app-key">{{ _("Admin app key (for everyone's /cantus link)") }}</label>
+                                <input type="password" id="cantus-app-key" placeholder="cfk_…" autocomplete="off" />
+                            </div>
+                            <label for="cantus-token">{{ _("Your personal token") }}</label>
                             <input type="password" id="cantus-token" placeholder="cfa_…" autocomplete="off" />
                             <div class="cantus-actions">
                                 <div class="cantus-action primary" id="cantus-save">{{ _("Save") }}</div>
                                 <div class="cantus-action" id="cantus-disconnect" style="display: none">{{ _("Disconnect") }}</div>
+                                <div class="cantus-action" id="cantus-app-remove" style="display: none">{{ _("Remove app key") }}</div>
                             </div>
                             <p class="cantus-message" id="cantus-message"></p>
                         </div>
                         <p class="cantus-howto">
                             {{ _("Make a token in Cantus: Account → Connect other apps → Create token (it starts with cfa_). Revoking it there cuts Vocard off at once. You can also connect from Discord with /cantus link.") }}
                         </p>
-                        <!-- Only shown to the bot's owner, DJs and server admins: the bot's app key, which
-                             turns on /cantus link for everyone (cantusAppSave). -->
-                        <div class="cantus-fields" id="cantus-admin" style="display: none">
-                            <h3>{{ _("Bot app key (owner, DJs and server admins)") }}</h3>
-                            <p class="cantus-state" id="cantus-admin-state"></p>
-                            <input type="url" id="cantus-app-url" placeholder="https://your-cantus-server" autocomplete="off" />
-                            <input type="password" id="cantus-app-key" placeholder="cfk_…" autocomplete="off" />
-                            <div class="cantus-actions">
-                                <div class="cantus-action primary" id="cantus-app-save">{{ _("Save app key") }}</div>
-                                <div class="cantus-action" id="cantus-app-remove" style="display: none">{{ _("Remove") }}</div>
-                            </div>
-                            <p class="cantus-message" id="cantus-admin-message"></p>
-                            <p class="cantus-howto">{{ _("In Cantus: Admin → Apps → New app key (it starts with cfk_, shown once). It turns on /cantus link for everyone and works right away; deleting the key in Cantus unlinks everyone who linked through it.") }}</p>
-                        </div>
+                        <p class="cantus-howto" id="cantus-app-howto" style="display: none">
+                            {{ _("App key: in Cantus, Admin → Apps → New app key (it starts with cfk_, shown once). It works right away for every server; deleting it in Cantus unlinks everyone who linked through it.") }}
+                        </p>
                     </div>
                     {% include "footer.html" %}
                 </div>

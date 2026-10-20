@@ -929,6 +929,52 @@ async def cantusAppSave(bot: commands.Bot, data: Dict) -> Dict:
     return await cantusStatus(bot, data, "App key saved - /cantus link works now.")
 
 
+async def cantusSave(bot: commands.Bot, data: Dict) -> Dict:
+    """Patch 46: the dashboard's one Cantus form - server address, the bot's
+    app key (owner/DJs/admins only) and a personal token, each optional.
+    Saves whatever was filled in; for an admin, a changed server address
+    alone re-checks the saved app key against it. Never echoes either key."""
+    from voicelink import cantus
+    user_id = int(data.get("userId"))
+    server = str(data.get("server") or "").strip()
+    app_key = str(data.get("appKey") or "").strip()
+    token = str(data.get("token") or "").strip()
+    done = []
+    is_admin = await _is_bot_admin(bot, user_id, data)
+    if app_key and not is_admin:
+        return await cantusStatus(bot, data, "Only the bot's owner, DJs and server admins can set the app key.", ok=False)
+    if not is_admin and cantus.base_url():
+        server = cantus.base_url()  # members only paste a token; the server is the admins' choice
+    if not server:
+        return await cantusStatus(bot, data, "Enter the Cantus server address.", ok=False)
+    try:
+        moved = cantus.normalize_server(server) != cantus.base_url()
+    except cantus.CantusError as e:
+        return await cantusStatus(bot, data, _cantus_message(e), ok=False)
+    if is_admin and moved and not app_key and not cantus.is_configured():
+        # No app key yet: just share the server address with everyone.
+        await cantus.save_server(server)
+        done.append("server address saved for everyone")
+    if is_admin and (app_key or (moved and cantus.is_configured() and not token)):
+        try:
+            await cantus.save_app(server, app_key or None)
+            done.append("app key saved - /cantus link works")
+        except cantus.CantusError as e:
+            text = "Cantus didn't accept that app key." if e.code == "bad_key" else _cantus_message(e)
+            return await cantusStatus(bot, data, text, ok=False)
+    if token:
+        try:
+            account = await cantus.connect_token(user_id, server, token)
+            done.append(f"connected as {account.get('username') or '?'}")
+        except cantus.CantusError as e:
+            prefix = "App key saved, but the token failed: " if done else ""
+            return await cantusStatus(bot, data, prefix + _cantus_message(e), ok=False)
+    if not done:
+        return await cantusStatus(bot, data, "Nothing to save - paste a personal token" + (" or the app key." if is_admin else "."), ok=False)
+    text = "; ".join(done)
+    return await cantusStatus(bot, data, text[0].upper() + text[1:] + ".")
+
+
 async def cantusAppRemove(bot: commands.Bot, data: Dict) -> Dict:
     from voicelink import cantus
     if not await _is_bot_admin(bot, int(data.get("userId")), data):
@@ -1193,6 +1239,7 @@ METHODS: Dict[str, Union[SystemMethod, PlayerMethod]] = {
     "cantusConnect": SystemMethod(cantusConnect, credit=10),
     "cantusDisconnect": SystemMethod(cantusDisconnect, credit=5),
     "cantusAppSave": SystemMethod(cantusAppSave, credit=10),
+    "cantusSave": SystemMethod(cantusSave, credit=10),
     "cantusAppRemove": SystemMethod(cantusAppRemove, credit=5),
     "getGuildTopTracks": SystemMethod(getGuildTopTracks, credit=2),
     "initPlayer": PlayerMethod(initPlayer),
