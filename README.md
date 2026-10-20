@@ -97,6 +97,8 @@ server address is a default the bot's owner, a DJ or a server admin saves
 there once (or `settings.json` -> `"cantus": {"url": ..., "dashboard_url":
 ...}`; only public addresses). `/cantus link` explains the steps,
 `/cantus unlink` forgets the token, revoking it in Cantus cuts Vocard off.
+The dashboard's **Cantus** tab lists your songs (searchable) and playlists;
+click a song to queue it, or "Play all" on a playlist.
 
 A Cantus library is private: others see someone's Cantus songs only while
 they're queued or playing (they can still move, skip or remove them), never

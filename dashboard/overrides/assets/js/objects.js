@@ -235,6 +235,70 @@ function isForeignCantus(track, userId) {
     return isCantusTrack(track) && String(track.identifier).split(":")[1] !== String(userId);
 }
 
+// Patch 46: the Cantus tab - your own library, asked live from Cantus.
+function openCantusPage(player, tab) {
+    player.cantusTab = player.cantusTab || { tab: "songs", query: "", offset: 0, loading: false, playlist: null };
+    if (tab) player.cantusTab.tab = tab;
+    changePage("cantus-page", true, false);
+    showCantusTab(player);
+    if (player.cantusTab.tab === "songs") requestCantusSongs(player, false);
+    else player.send({ op: "cantusPlaylists" });
+}
+
+function showCantusTab(player) {
+    const t = player.cantusTab;
+    $("#cantus-page .ct-tab").removeClass("active").filter(`[data-tab="${t.tab}"]`).addClass("active");
+    $("#cantus-songs-view").toggle(t.tab === "songs");
+    $("#cantus-playlists-view").toggle(t.tab === "playlists");
+    $("#cantus-playlist-list").toggle(!t.playlist);
+    $("#cantus-playlist-view").toggle(!!t.playlist);
+}
+
+function requestCantusSongs(player, more) {
+    const t = player.cantusTab;
+    if (!more) {
+        t.offset = 0;
+        $("#cantus-song-list").empty();
+    }
+    t.loading = true;
+    $("#cantus-loader").show();
+    $("#cantus-load-more, #cantus-error").hide();
+    player.send({ op: "cantusSongs", query: t.query, offset: more ? t.offset : 0 });
+}
+
+function buildCantusRowHtml(song) {
+    const text = (s) => $("<div>").text(s == null ? "" : String(s)).html();
+    const sub = [song.artists, song.album].filter(Boolean).map(text).join(" · ");
+    const meta = [song.quality, song.durationMs ? msToReadableTime(song.durationMs) : ""].filter(Boolean).map(text).join(" · ");
+    return `<div class="track-row" data-id="${text(song.trackId)}">
+        <div class="left">
+            <img src="${text(song.cover || "/static/img/notFound.png")}" onerror="this.src='/static/img/notFound.png'" alt="">
+            <div class="track-info">
+                <p class="title">${text(song.title || "Unknown")}</p>
+                <p class="description">${sub}</p>
+            </div>
+        </div>
+        <div class="right">
+            <p class="ct-meta">${meta}</p>
+            <span class="material-symbols-outlined clickable">more_horiz</span>
+        </div>
+    </div>`;
+}
+
+// Not connected / Cantus errors: show why, with a way to Settings.
+function cantusTabError(player, data) {
+    $("#cantus-loader").hide();
+    if (player.cantusTab) player.cantusTab.loading = false;
+    $("#cantus-library").toggle(!data.notConnected);
+    $("#cantus-not-connected").toggle(!!data.notConnected);
+    if (data.notConnected) {
+        $("#cantus-not-connected-text").text(data.error);
+    } else {
+        $("#cantus-error").text(data.error).show();
+    }
+    return true;
+}
+
 // Patch 45: Full history page - each song once, newest first. Asks for the
 // first 100 songs of a scope ("user" or "guild"); "Load more" the next 100.
 function openFullHistory(player, scope) {
@@ -440,6 +504,52 @@ const methods = {
 
         $("#cantus-message").removeClass("error").text("");
         if (data.message !== undefined) $("#cantus-message").toggleClass("error", data.ok === false).text(data.message);
+    },
+
+    // Patch 46: the Cantus tab's replies. A reply for a search the user has
+    // since changed is ignored.
+    cantusSongs: function (player, data) {
+        const t = player.cantusTab;
+        if (!t || (data.query || "") !== t.query) return;
+        if (data.error) return cantusTabError(player, data);
+        $("#cantus-library").show();
+        $("#cantus-not-connected").hide();
+        t.loading = false;
+        $("#cantus-loader").hide();
+        const list = $("#cantus-song-list");
+        if (!data.append) list.empty();
+        (data.songs || []).forEach((song) => list.append(buildCantusRowHtml(song)));
+        t.offset = data.nextOffset || 0;
+        $("#cantus-load-more").toggle(!!data.nextOffset);
+        const shown = list.children().length;
+        $("#cantus-songs-count").text(shown ? (data.total != null ? `${shown} of ${data.total} songs` : `${shown} songs`) : (t.query ? "No songs match." : "No songs yet."));
+    },
+
+    cantusPlaylists: function (player, data) {
+        if (data.error) return cantusTabError(player, data);
+        $("#cantus-library").show();
+        $("#cantus-not-connected").hide();
+        $("#cantus-loader").hide();
+        const text = (s) => $("<div>").text(s == null ? "" : String(s)).html();
+        const lists = data.playlists || [];
+        $("#cantus-playlist-list").html(
+            lists.length
+                ? lists.map((p) => `<div class="track-row ct-playlist-row" data-playlist="${text(p.id)}">
+                    <div class="left"><span class="material-symbols-outlined">queue_music</span>
+                        <div class="track-info"><p class="title">${text(p.name)}</p><p class="description">${text(p.songs)} songs</p></div>
+                    </div></div>`).join("")
+                : `<p class="ct-note">No playlists yet.</p>`
+        );
+    },
+
+    cantusPlaylist: function (player, data) {
+        const t = player.cantusTab;
+        if (!t || !t.playlist || data.id !== t.playlist) return;
+        if (data.error) return cantusTabError(player, data);
+        $("#cantus-loader").hide();
+        $("#cantus-playlist-name").text(data.name || "");
+        $("#cantus-playlist-songs").html((data.songs || []).map(buildCantusRowHtml).join("") || `<p class="ct-note">No playable songs yet.</p>`);
+        $("#cantus-playlist-play").toggle((data.songs || []).length > 0);
     },
 
     // Patch 45: one page of the Full history. Ignores replies for a tab the

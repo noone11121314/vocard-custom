@@ -541,3 +541,51 @@ def test_dashboard_messages_with_a_token_are_never_logged():
     assert "cfa_secret" not in _redact({"op": "cantusSave", "server": "https://x", "token": "cfa_secret"})
     assert _redact({"op": "x", "token": "abc"}) == "{'op': 'x', 'token': '…'}"
     assert "cfa_zzz" not in _redact("something cfa_zzz something")
+
+
+# --- the dashboard's Cantus tab ------------------------------------------------------
+
+async def test_the_tab_lists_your_songs_with_queueable_ids_and_no_play_link(fake, allow_localhost):
+    from voicelink.ipc.methods import cantusSongs
+    await connected(fake)
+    reply = await cantusSongs(MagicMock(), {"userId": str(OWNER), "query": "one", "offset": 0})
+    assert reply["op"] == "cantusSongs" and reply["query"] == "one" and not reply["append"]
+    song = reply["songs"][0]
+    assert (song["title"], song["artists"], song["quality"], song["durationMs"]) == ("Song One", "Artist", "16-bit/44.1kHz", 184000)
+    assert decode(song["trackId"])["identifier"] == f"cantus:{OWNER}:s1"
+    assert PLAY_PATH not in repr(reply) and GOOD_TOKEN not in repr(reply)
+    assert fake.calls[-1][2] == {"q": "one", "limit": "50"}
+
+
+async def test_the_tab_pages_on_with_offset(fake, allow_localhost):
+    from voicelink.ipc.methods import cantusSongs
+    await connected(fake)
+    reply = await cantusSongs(MagicMock(), {"userId": str(OWNER), "query": "", "offset": 50})
+    assert reply["append"] and fake.calls[-1][2] == {"limit": "50", "offset": "50"}
+
+
+async def test_the_tab_lists_playlists_and_a_playlists_songs(fake, allow_localhost):
+    from voicelink.ipc.methods import cantusPlaylist, cantusPlaylists
+    await connected(fake)
+    lists = await cantusPlaylists(MagicMock(), {"userId": str(OWNER)})
+    assert lists["playlists"] == [{"id": "p1", "name": "Road trip", "songs": 2}]
+    one = await cantusPlaylist(MagicMock(), {"userId": str(OWNER), "playlistId": "p1"})
+    assert one["name"] == "Road trip" and [s["title"] for s in one["songs"]] == ["Song One", "Song Two"]
+    assert all(decode(s["trackId"])["identifier"].startswith(f"cantus:{OWNER}:") for s in one["songs"])
+    assert PLAY_PATH not in repr(one)
+
+
+async def test_the_tab_tells_someone_not_connected_to_connect(fake):
+    from voicelink.ipc.methods import cantusSongs
+    reply = await cantusSongs(MagicMock(), {"userId": str(FRIEND)})
+    assert reply["notConnected"] and "Settings" in reply["error"] and "songs" not in reply and fake.calls == []
+
+
+async def test_the_tab_only_ever_shows_your_own_library(fake, allow_localhost):
+    """Two connected people, two libraries: each sees only their own."""
+    from voicelink.ipc.methods import cantusSongs
+    await connected(fake)
+    await connected(fake, FRIEND, FRIEND_TOKEN)
+    mine = await cantusSongs(MagicMock(), {"userId": str(OWNER)})
+    theirs = await cantusSongs(MagicMock(), {"userId": str(FRIEND)})
+    assert [s["title"] for s in mine["songs"]] == ["Song One"] and theirs["songs"] == []

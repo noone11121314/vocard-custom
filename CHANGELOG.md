@@ -32,7 +32,8 @@ technical write-up (cause, fix, files, tests) is in
 ## Playback
 - Play your own songs and playlists from Cantus Flaccus: paste your
   personal Cantus token once in the dashboard (Settings -> Cantus), then
-  `/cantus play` (search as you type) and `/cantus playlist`. Songs show
+  `/cantus play` (search as you type) and `/cantus playlist`, or browse
+  your songs and playlists in the dashboard's new Cantus tab. Songs show
   their real title, artist and cover, keep working after restarts, and are
   evened out in volume like the rest. Your Cantus songs stay yours: others
   only see them while they're queued (and can still move or skip them),

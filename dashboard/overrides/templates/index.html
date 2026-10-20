@@ -515,6 +515,61 @@
                     </div>
                     {% include "footer.html" %}
                 </div>
+                <div class="sections" id="cantus-page">
+                    <!-- Patch 46: your own Cantus Flaccus library, asked live from Cantus
+                         with your personal token (cantusSongs / cantusPlaylists /
+                         cantusPlaylist in methods.py). Only you see it. Click a song to
+                         add it to the queue; a playlist has "Play all". -->
+                    <style>
+                        #cantus-page .ct-tabs { display: flex; gap: 8px; margin-top: 12px; }
+                        #cantus-page .ct-tab, #cantus-page .ct-action { padding: 6px 14px; border-radius: 999px; cursor: pointer; background: rgba(255,255,255,0.08); width: fit-content; }
+                        #cantus-page .ct-tab.active, #cantus-page .ct-action.primary { background: var(--primary, #1db954); color: #000; }
+                        #cantus-page input { width: 100%; max-width: 520px; margin-top: 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: inherit; font: inherit; }
+                        #cantus-page .ct-meta { opacity: 0.6; font-size: 0.85em; white-space: nowrap; }
+                        #cantus-page .ct-note { opacity: 0.7; margin-top: 12px; }
+                        #cantus-page .ct-more { display: none; margin: 16px auto; }
+                        #cantus-page .ct-playlist-row { cursor: pointer; }
+                        #cantus-page .ct-head { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+                    </style>
+                    <div class="section">
+                        <div class="header">
+                            <div class="sub-title">
+                                <p>{{ _("Your own library - only you see it. Click a song to add it to the queue.") }}</p>
+                                <h2>{{ _("Cantus") }}</h2>
+                            </div>
+                        </div>
+                        <div id="cantus-not-connected" style="display: none">
+                            <p class="ct-note" id="cantus-not-connected-text"></p>
+                            <div class="ct-action primary" id="cantus-open-settings" style="margin-top: 12px">{{ _("Connect in Settings") }}</div>
+                        </div>
+                        <div id="cantus-library">
+                            <div class="ct-tabs">
+                                <div class="ct-tab active" data-tab="songs">{{ _("Songs") }}</div>
+                                <div class="ct-tab" data-tab="playlists">{{ _("Playlists") }}</div>
+                            </div>
+                            <div id="cantus-songs-view">
+                                <input type="search" id="cantus-search" placeholder="{{ _('Search your songs') }}" autocomplete="off" />
+                                <p class="ct-note" id="cantus-songs-count"></p>
+                                <div class="track-rows" id="cantus-song-list"></div>
+                                <div class="ct-action ct-more" id="cantus-load-more">{{ _("Load more") }}</div>
+                            </div>
+                            <div id="cantus-playlists-view" style="display: none">
+                                <div class="track-rows" id="cantus-playlist-list"></div>
+                                <div id="cantus-playlist-view" style="display: none">
+                                    <div class="ct-head">
+                                        <div class="ct-action" id="cantus-playlist-back">{{ _("← Playlists") }}</div>
+                                        <h3 id="cantus-playlist-name"></h3>
+                                        <div class="ct-action primary" id="cantus-playlist-play">{{ _("Play all") }}</div>
+                                    </div>
+                                    <div class="track-rows" id="cantus-playlist-songs"></div>
+                                </div>
+                            </div>
+                            <div class="center" id="cantus-loader" style="display: none"><div class="loader"></div></div>
+                            <p class="ct-note" id="cantus-error" style="display: none"></p>
+                        </div>
+                    </div>
+                    {% include "footer.html" %}
+                </div>
                 <div class="sections" id="user-settings-page">
                     <div class="section">
                         <div class="header">

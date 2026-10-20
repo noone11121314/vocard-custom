@@ -2553,6 +2553,17 @@ dashboard, `settings.json` -> `cantus.dashboard_url` - tokens are never typed
 in Discord), `/cantus unlink`, `/cantus help`. Nothing from a library is
 kept between commands: Cantus is asked live every time.
 
+**Cantus tab** (user: "do the Cantus tab"; menu -> Cantus, `#cantus-page`):
+your own library, asked live with your token - **Songs** (50 at a time,
+"Load more" via `offset`/`next_offset`, a search box that asks Cantus 300ms
+after you stop typing; a stale reply for an old search is ignored) and
+**Playlists** (open one -> its songs in order, "Play all"). Clicking a song
+adds it to the queue (`addTracks`), the ⋯ menu has Play now / Play next / Add
+to queue / Add to playlist. Not connected: a message and a "Connect in
+Settings" button. IPC `cantusSongs`, `cantusPlaylists`, `cantusPlaylist`
+(`ipc/methods.py`): every song comes with its queueable track id (song id +
+metadata, never a play link); only ever the asking user's own library.
+
 **Tracks:** a queued Cantus song is a Track we encode ourselves
 (`build_track`): `sourceName "cantus"`, the song's real title / artists /
 length / cover / ISRC, `identifier "cantus:<owner's discord id>:<song
@@ -2625,7 +2636,7 @@ differs from `update.__version__`; the first deploy blanked `version` once
 including the "denied" state) and the bot-wide app key (`cfk_…`, settings and
 dashboard field) - built, deployed and then dropped by the owner's decision.
 
-Tests: `tests/unit/test_patch46_cantus.py` (50): connect checks and stores
+Tests: `tests/unit/test_patch46_cantus.py` (55): connect checks and stores
 the token, the token on every call (no app key, no Discord header), bad
 token not stored, not connected -> no call, status never contains the token,
 disconnect, the default server survives a restart, `/cantus link` replies
@@ -2640,13 +2651,17 @@ the owner saves the song id and no link, no queue payload ever carries a
 play link; 8 private/internal servers refused, malformed addresses,
 normalization, foreign play links, the resolver; loudness; `Player.play()`;
 the dashboard form (member pastes only a token, admin sets the default
-server, nothing typed, refused server); log redaction. Real MongoDB:
+server, nothing typed, refused server); log redaction; the Cantus tab (songs
+with queueable ids and no play link, paging, playlists and a playlist's
+songs, not connected, two people each see only their own library). Real MongoDB:
 connections and gains stored apart from the user record.
 `dashboard/tests/cantus_check.js` (14 Chromium checks: member form, masked
 token, admin edits the server, no app key field anywhere) and
 `cantus_queue_check.js` (7: History hides other people's Cantus songs, queued
 ones still show with queue controls, no copy link / re-queue / save on them,
-your own keeps re-queue but not Copy link).
+your own keeps re-queue but not Copy link) and `cantus_tab_check.js` (16:
+menu, songs, Load more, live search, click to queue, playlists, Play all in
+order, not connected -> Connect in Settings).
 
 ---
 

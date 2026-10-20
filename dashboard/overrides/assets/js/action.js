@@ -1044,6 +1044,10 @@ $(document).ready(function () {
                     return buildExplorePage()
                 }
 
+                if (pageName == "cantus-page") {
+                    return openCantusPage(player)
+                }
+
                 if (pageName == "full-history-page") {
                     return openFullHistory(player, player.fullHistory?.scope || "user")
                 }
@@ -1187,6 +1191,44 @@ $(document).ready(function () {
                     $(".main-container").append(buildPlaylistHtml(cardId, selectedPlaylistPayload, selectedPlaylistPayload.type))
                     changePage(pageId, true)
                 }
+            }
+            return
+        }
+
+        // Patch 46: the Cantus tab.
+        if ($target.closest("#cantus-page").length) {
+            if ($target.closest("#cantus-open-settings").length) {
+                changePage("user-settings-page")
+                return player.send({ op: "cantusStatus" })
+            }
+            const $tab = $target.closest(".ct-tab")
+            if ($tab.length) {
+                player.cantusTab.playlist = null
+                return openCantusPage(player, $tab.data("tab"))
+            }
+            if ($target.closest("#cantus-load-more").length) return requestCantusSongs(player, true)
+            if ($target.closest("#cantus-playlist-back").length) {
+                player.cantusTab.playlist = null
+                return showCantusTab(player)
+            }
+            if ($target.closest("#cantus-playlist-play").length) {
+                const ids = $("#cantus-playlist-songs .track-row").map(function () { return $(this).data("id") }).get()
+                return ids.length && player.send({ op: "addTracks", tracks: ids, type: "addToQueue" })
+            }
+            const $list = $target.closest(".ct-playlist-row")
+            if ($list.length) {
+                player.cantusTab.playlist = String($list.data("playlist"))
+                $("#cantus-playlist-name").text($list.find(".title").text())
+                $("#cantus-playlist-songs").empty()
+                $("#cantus-loader").show()
+                showCantusTab(player)
+                return player.send({ op: "cantusPlaylist", playlistId: player.cantusTab.playlist })
+            }
+            const $track = $target.closest(".track-row")
+            if ($track.length) {
+                const options = { selectedTrackId: $track.data("id") }
+                if ($target.is("span.material-symbols-outlined")) return buildContextMenu(e, ["playNow", "playNext", "addToQueue", "playlistAddTrack", "getLyrics"], options)
+                return player.send({ op: "addTracks", tracks: [options.selectedTrackId], type: "addToQueue" })
             }
             return
         }
@@ -2190,6 +2232,18 @@ $(document).ready(function () {
         }
         changePage("explore-page", true, false)
     }
+
+    // Patch 46: the Cantus tab's search asks Cantus live as you type.
+    let cantusSearchTimer = null
+    $(document).on("input", "#cantus-search", function () {
+        const query = $(this).val().trim()
+        clearTimeout(cantusSearchTimer)
+        cantusSearchTimer = setTimeout(() => {
+            if (!player.cantusTab || player.cantusTab.query === query) return
+            player.cantusTab.query = query
+            requestCantusSongs(player, false)
+        }, 300)
+    })
 
     // --- Mobile Overlay Logic for Menu and Queue ---
     function isMobile() {

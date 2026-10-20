@@ -936,6 +936,70 @@ async def cantusSave(bot: commands.Bot, data: Dict) -> Dict:
     return await cantusStatus(bot, data, text[0].upper() + text[1:] + ".")
 
 
+def _cantus_song_payload(song: Dict, user_id: int, server: str) -> Dict:
+    """Patch 46: a song for the dashboard's Cantus tab - its queueable track
+    id (song id + metadata, never a play link) and what the row shows."""
+    from voicelink import cantus
+    track = cantus.build_track(song, user_id, None, server)
+    return {
+        "trackId": track.track_id,
+        "title": song.get("title"), "artists": song.get("artists"), "album": song.get("album"),
+        "durationMs": song.get("duration_ms"), "cover": song.get("cover"), "quality": song.get("quality"),
+    }
+
+
+async def _cantus_reply(op: str, data: Dict, call) -> Dict:
+    """Runs a Cantus tab request for this user; not connected / Cantus errors
+    come back as {"error": <message>, "notConnected": bool}."""
+    from voicelink import cantus
+    user_id = int(data.get("userId"))
+    reply = {"op": op, "userId": str(user_id)}
+    try:
+        server = await cantus.server_of(user_id)
+        reply.update(await call(user_id, server))
+    except cantus.CantusError as e:
+        reply.update(error=_cantus_message(e) if not e.not_linked else "Connect your Cantus account first (Settings -> Cantus).", notConnected=e.not_linked)
+    return reply
+
+
+async def cantusSongs(bot: commands.Bot, data: Dict) -> Dict:
+    """Patch 46: the Cantus tab's song list - your library, searched live,
+    50 at a time (`offset` pages on)."""
+    from voicelink import cantus
+    query = str(data.get("query") or "")[:200]
+    try:
+        offset = max(0, int(data.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    async def call(user_id, server):
+        result = await cantus.search_songs(user_id, query, limit=50, offset=offset)
+        songs = [_cantus_song_payload(s, user_id, server) for s in result.get("songs", []) if s.get("id")]
+        return {"songs": songs, "query": query, "append": offset > 0, "total": result.get("total"),
+                "nextOffset": result.get("next_offset")}
+    return await _cantus_reply("cantusSongs", data, call)
+
+
+async def cantusPlaylists(bot: commands.Bot, data: Dict) -> Dict:
+    from voicelink import cantus
+
+    async def call(user_id, server):
+        lists = await cantus.playlists(user_id)
+        return {"playlists": [{"id": str(p["id"]), "name": p.get("name"), "songs": p.get("songs", 0)} for p in lists if p.get("id")]}
+    return await _cantus_reply("cantusPlaylists", data, call)
+
+
+async def cantusPlaylist(bot: commands.Bot, data: Dict) -> Dict:
+    from voicelink import cantus
+    playlist_id = str(data.get("playlistId") or "")
+
+    async def call(user_id, server):
+        p = await cantus.playlist(user_id, playlist_id)
+        return {"id": playlist_id, "name": p.get("name"),
+                "songs": [_cantus_song_payload(s, user_id, server) for s in p.get("songs", []) if s.get("id")]}
+    return await _cantus_reply("cantusPlaylist", data, call)
+
+
 async def cantusDisconnect(bot: commands.Bot, data: Dict) -> Dict:
     from voicelink import cantus
     await cantus.disconnect(int(data.get("userId")))
@@ -1188,6 +1252,9 @@ METHODS: Dict[str, Union[SystemMethod, PlayerMethod]] = {
     "cantusStatus": SystemMethod(cantusStatus, credit=2),
     "cantusDisconnect": SystemMethod(cantusDisconnect, credit=5),
     "cantusSave": SystemMethod(cantusSave, credit=10),
+    "cantusSongs": SystemMethod(cantusSongs, credit=2),
+    "cantusPlaylists": SystemMethod(cantusPlaylists, credit=2),
+    "cantusPlaylist": SystemMethod(cantusPlaylist, credit=2),
     "getGuildTopTracks": SystemMethod(getGuildTopTracks, credit=2),
     "initPlayer": PlayerMethod(initPlayer),
     "skipTo": PlayerMethod(skipTo),
