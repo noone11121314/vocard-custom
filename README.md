@@ -103,7 +103,9 @@ Members can play their own songs and playlists from a Cantus Flaccus server
   "cantus": {"url": "https://<your Cantus server>", "app_key": "<app key>"}
   ```
 
-  Never commit it (`settings.json` is ignored).
+  Never commit it (`settings.json` is ignored). Or paste it in the
+  dashboard: Settings -> Cantus -> Bot app key (shown to the bot's owner,
+  DJs and server admins); it works at once, no restart.
 
 `/cantus unlink` (or Disconnect in the dashboard) disconnects; revoking the
 token in Cantus cuts Vocard off at once; `/cantus help` repeats the steps.

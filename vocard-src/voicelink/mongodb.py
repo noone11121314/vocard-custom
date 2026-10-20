@@ -349,6 +349,23 @@ class MongoDBHandler:
         return (await cls._db["CantusLinks"].delete_one({"_id": int(user_id)})).deleted_count > 0
 
     @classmethod
+    async def get_cantus_app(cls) -> Optional[Dict[str, Any]]:
+        """Patch 46: the bot's Cantus app key/server, saved from the
+        dashboard (overrides settings.json, applies without a restart)."""
+        if cls._db is None:
+            return None
+        return await cls._db["CantusConfig"].find_one({"_id": "app"})
+
+    @classmethod
+    async def set_cantus_app(cls, app: Optional[Dict[str, Any]]) -> None:
+        if cls._db is None:
+            return
+        if app is None:
+            await cls._db["CantusConfig"].delete_one({"_id": "app"})
+        else:
+            await cls._db["CantusConfig"].replace_one({"_id": "app"}, {"_id": "app", **app}, upsert=True)
+
+    @classmethod
     async def set_cantus_gain(cls, song_id: str, gain: float) -> None:
         """Patch 46: a Cantus song's measured loudness gain."""
         if cls._db is None:

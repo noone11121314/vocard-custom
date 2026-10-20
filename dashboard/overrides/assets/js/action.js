@@ -1659,6 +1659,22 @@ $(document).ready(function () {
                 $("#cantus-message").removeClass("error").text("Checking…")
                 return player.send({ op: "cantusConnect", server, token })
             }
+            if ($target.closest("#cantus-app-save").length) {
+                const url = $("#cantus-app-url").val().trim()
+                const appKey = $("#cantus-app-key").val().trim()
+                if (!url || !appKey) {
+                    return $("#cantus-admin-message").addClass("error").text("Enter the server address and the app key.")
+                }
+                $("#cantus-app-key").val("")
+                $("#cantus-admin-message").removeClass("error").text("Checking…")
+                player.cantusAdminPending = true
+                return player.send({ op: "cantusAppSave", url, appKey })
+            }
+            if ($target.closest("#cantus-app-remove").length) {
+                $("#cantus-admin-message").removeClass("error").text("Removing…")
+                player.cantusAdminPending = true
+                return player.send({ op: "cantusAppRemove" })
+            }
             if ($target.closest("#cantus-disconnect").length) {
                 $("#cantus-message").removeClass("error").text("Disconnecting…")
                 return player.send({ op: "cantusDisconnect" })

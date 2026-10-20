@@ -98,6 +98,8 @@ class FakeCantus:
         return web.json_response({"code": "K7QX", "url": "/link?code=K7QX", "expires": "2026-10-20T13:00:00Z"})
 
     async def link_status(self, request):
+        if request.headers.get("Authorization") != f"Bearer {APP_KEY}":
+            return web.json_response({"error": "bad app key"}, status=401)
         states = self.pairing.get(request.match_info["code"])
         if not states:
             return web.json_response({"error": "not found"}, status=404)
@@ -119,6 +121,11 @@ async def fake(monkeypatch):
     Config({"client_id": 1, "cantus": {"url": str(server.make_url("")).rstrip("/"), "app_key": APP_KEY}})
     cantus._links.clear()
     cantus._gains.clear()
+    cantus._app_override.clear()
+    saved_app = {}
+    f.saved_app = saved_app
+    monkeypatch.setattr("voicelink.mongodb.MongoDBHandler.set_cantus_app", AsyncMock(side_effect=lambda app: (saved_app.clear(), saved_app.update(app or {}))))
+    monkeypatch.setattr("voicelink.mongodb.MongoDBHandler.get_cantus_app", AsyncMock(side_effect=lambda: dict(saved_app) or None))
     links = {}
     f.stored = links
     monkeypatch.setattr("voicelink.mongodb.MongoDBHandler.get_cantus_link", AsyncMock(side_effect=lambda uid: links.get(int(uid))))
@@ -426,3 +433,78 @@ async def test_pairing_stops_when_the_user_presses_deny(fake):
 def test_app_keys_are_masked_in_logs_too():
     from voicelink.ipc.client import _redact
     assert "cfk_secretkey" not in _redact("Authorization Bearer cfk_secretkey")
+
+
+# --- the bot's app key, pasted by the owner in the dashboard -------------------
+
+
+async def test_the_owner_saves_an_app_key_and_pairing_works_at_once(fake):
+    server = cantus.base_url()
+    Config({"client_id": 1})  # nothing in settings.json
+    assert not cantus.is_configured()
+
+    await cantus.save_app(server, f" {APP_KEY} ")
+
+    assert cantus.is_configured() and cantus.base_url() == server
+    assert fake.saved_app["app_key"] == APP_KEY and fake.saved_app["url"] == server
+    assert (await cantus.me(OWNER))["id"] == OWNER  # pairing calls now use it
+    assert cantus.app_key_hint() == "test…-key" and APP_KEY not in cantus.app_key_hint()
+
+
+async def test_a_wrong_app_key_is_refused_and_not_saved(fake):
+    with pytest.raises(cantus.CantusError) as e:
+        await cantus.save_app(cantus.base_url(), "cfk_wrong")
+    assert e.value.code == "bad_key" and fake.saved_app == {}
+
+
+async def test_a_saved_app_key_survives_a_restart_and_can_be_removed(fake):
+    server = cantus.base_url()
+    Config({"client_id": 1})
+    await cantus.save_app(server, APP_KEY)
+    cantus._app_override.clear()  # restart
+    assert not cantus.is_configured()
+    await cantus.load_app()
+    assert cantus.is_configured()
+    await cantus.remove_app()
+    assert not cantus.is_configured() and fake.saved_app == {}
+
+
+def _bot(owner_ids):
+    bot = MagicMock()
+    bot.get_user = lambda uid: types.SimpleNamespace(id=uid)
+    bot.is_owner = AsyncMock(side_effect=lambda user: user.id in owner_ids)
+    return bot
+
+
+async def test_members_without_dj_or_admin_cannot_set_the_app_key(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusAppSave
+    monkeypatch.setattr("voicelink.ipc.methods._require_cache_manager_permission", AsyncMock(return_value={"op": "errorMsg"}))
+    Config({"client_id": 1})
+    reply = await cantusAppSave(_bot({OWNER}), {"userId": str(FRIEND), "url": "https://x.example", "appKey": APP_KEY})
+    assert reply["ok"] is False and "DJs" in reply["message"] and "admin" not in reply
+    assert fake.saved_app == {} and fake.calls == []
+
+
+async def test_a_dj_can_set_the_app_key(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusAppSave
+    monkeypatch.setattr("voicelink.ipc.methods._require_cache_manager_permission", AsyncMock(return_value=FRIEND))
+    server = cantus.base_url()
+    Config({"client_id": 1})
+    reply = await cantusAppSave(_bot(set()), {"userId": str(FRIEND), "url": server, "appKey": APP_KEY})
+    assert reply["ok"] and reply["admin"]["configured"] and fake.saved_app["app_key"] == APP_KEY
+
+
+async def test_the_owner_sees_the_admin_box_with_only_a_key_hint(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusAppSave, cantusStatus
+    server = cantus.base_url()
+    Config({"client_id": 1})
+    reply = await cantusAppSave(_bot({OWNER}), {"userId": str(OWNER), "url": server, "appKey": APP_KEY})
+    assert reply["ok"] and reply["admin"] == {"configured": True, "url": server, "keyHint": "test…-key"}
+    assert APP_KEY not in repr(reply)
+    monkeypatch.setattr("voicelink.ipc.methods._require_cache_manager_permission", AsyncMock(return_value={"op": "errorMsg"}))
+    assert "admin" not in await cantusStatus(_bot({OWNER}), {"userId": str(FRIEND)})
+
+
+def test_app_key_messages_from_the_dashboard_are_never_logged():
+    from voicelink.ipc.client import _redact
+    assert "zzz" not in _redact({"op": "cantusAppSave", "url": "https://x", "appKey": "zzz"})

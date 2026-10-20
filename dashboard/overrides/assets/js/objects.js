@@ -410,10 +410,21 @@ const methods = {
         $("#cantus-state").html(state);
         $("#cantus-disconnect").toggle(!!data.connected);
         if (!$("#cantus-server").val()) $("#cantus-server").val(data.server || data.defaultServer || "");
-        if (data.message !== undefined) {
-            $("#cantus-message").toggleClass("error", data.ok === false).text(data.message);
-        } else {
-            $("#cantus-message").removeClass("error").text("");
+        // A reply to the owner's app-key form puts its message there, not
+        // under the personal token form.
+        const target = player.cantusAdminPending ? "#cantus-admin-message" : "#cantus-message";
+        player.cantusAdminPending = false;
+        $("#cantus-message, #cantus-admin-message").removeClass("error").text("");
+        if (data.message !== undefined) $(target).toggleClass("error", data.ok === false).text(data.message);
+
+        // Owner, DJs and server admins: the bot's app key (cfk_…<last 4> only).
+        $("#cantus-admin").toggle(!!data.admin);
+        if (data.admin) {
+            $("#cantus-admin-state").html(data.admin.configured
+                ? `App key <b>${text(data.admin.keyHint)}</b> on ${text(data.admin.url)} - /cantus link is on.`
+                : "No app key yet - /cantus link is off.");
+            $("#cantus-app-remove").toggle(!!data.admin.configured);
+            if (!$("#cantus-app-url").val()) $("#cantus-app-url").val(data.admin.url || $("#cantus-server").val() || "");
         }
     },
 

@@ -58,6 +58,10 @@ SOURCE = "cantus"
 # disconnect takes effect on the next song.
 LINK_REUSE_SECONDS = 60
 
+# The app key/server an admin saved from the dashboard (Mongo CantusConfig);
+# wins over settings.json, so a new key works without a restart.
+_app_override: Dict[str, Any] = {}
+
 _session: Optional[aiohttp.ClientSession] = None
 _public_session: Optional[aiohttp.ClientSession] = None
 _links: Dict[Tuple[int, str], Tuple[float, str]] = {}
@@ -85,9 +89,53 @@ class CantusUnavailable(Exception):
 
 def _settings() -> Dict[str, Any]:
     try:
-        return Config().cantus or {}
+        configured = dict(Config().cantus or {})
     except Exception:
-        return {}
+        configured = {}
+    return {**configured, **{k: v for k, v in _app_override.items() if v}}
+
+
+async def load_app() -> None:
+    """At startup: the app key/server saved from the dashboard, if any."""
+    from .mongodb import MongoDBHandler
+    try:
+        saved = await MongoDBHandler.get_cantus_app() or {}
+    except Exception:
+        saved = {}
+    _app_override.clear()
+    _app_override.update({k: saved[k] for k in ("url", "app_key") if saved.get(k)})
+
+
+def app_key_hint() -> str:
+    key = str(_settings().get("app_key") or "")
+    return f"{key[:4]}…{key[-4:]}" if key else ""
+
+
+async def save_app(url: str, app_key: str) -> None:
+    """Dashboard (admins): checks the key against that server, then saves it.
+    Cantus has no "who am I" for apps, so ask for a pairing code that can't
+    exist: a valid key gets 404, a wrong one 401/403."""
+    server = normalize_server(url)
+    app_key = (app_key or "").strip()
+    if not app_key or len(app_key) > 512 or any(c.isspace() for c in app_key):
+        raise CantusError(400, "bad_key")
+    try:
+        await api("GET", "/link/vocard-key-check", account={"mode": "pairing", "server": server, "token": app_key})
+    except CantusError as e:
+        if e.status in (401, 403):
+            raise CantusError(e.status, "bad_key")
+        if e.status != 404:
+            raise
+    from .mongodb import MongoDBHandler
+    await MongoDBHandler.set_cantus_app({"url": server, "app_key": app_key, "saved_at": time.time()})
+    _app_override.clear()
+    _app_override.update({"url": server, "app_key": app_key})
+
+
+async def remove_app() -> None:
+    from .mongodb import MongoDBHandler
+    await MongoDBHandler.set_cantus_app(None)
+    _app_override.clear()
 
 
 def base_url() -> str:

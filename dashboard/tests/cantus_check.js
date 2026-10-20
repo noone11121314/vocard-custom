@@ -16,6 +16,7 @@ const TOKEN = "cfa_supersecrettoken9876";
   await page.addInitScript(() => {
     window.__sent = [];
     let connected = false;
+    let appKey = null;
     window.WebSocket = class {
       constructor() {
         this.readyState = 0;
@@ -27,7 +28,7 @@ const TOKEN = "cfa_supersecrettoken9876";
         window.__sent.push(m);
         const status = (extra) => this.push({ op: "cantusStatus", userId: "111", defaultServer: "https://cantus.example", ...(connected
           ? { connected: true, mode: "token", server: "https://cantus.example", username: "babab1t", songs: 272, tokenHint: "cfa_…9876" }
-          : { connected: false }), ...extra });
+          : { connected: false }), admin: { configured: !!appKey, url: appKey ? "https://cantus.example" : "", keyHint: appKey ? "cfk_…4321" : "" }, ...extra });
         if (m.op === "updateSelectedBot") this.push({ op: "initUser", userId: "111", data: { playlist: {}, inbox: [] } });
         if (m.op === "cantusStatus") status({});
         if (m.op === "cantusConnect") {
@@ -35,6 +36,10 @@ const TOKEN = "cfa_supersecrettoken9876";
           else { connected = true; status({ ok: true, message: "Connected as babab1t." }); }
         }
         if (m.op === "cantusDisconnect") { connected = false; status({ ok: true, message: "Disconnected." }); }
+        if (m.op === "cantusAppSave") {
+          if (m.appKey === "cfk_bad") status({ ok: false, message: "Cantus didn't accept that app key." });
+          else { appKey = m.appKey; status({ ok: true, message: "App key saved - /cantus link works now." }); }
+        }
       }
       close() {}
     };
@@ -89,6 +94,24 @@ const TOKEN = "cfa_supersecrettoken9876";
   await page.waitForTimeout(300);
   st = await ui();
   report(st.state.includes("Not connected") && !st.disconnect, "Disconnect works");
+
+  const KEY = "cfk_appkeysecret4321";
+  let admin = await page.evaluate(() => ({ visible: $("#cantus-admin").is(":visible"), state: $("#cantus-admin-state").text(), url: $("#cantus-app-url").val() }));
+  report(admin.visible && admin.state.includes("No app key"), `owner sees the app key box ("${admin.state}")`);
+  report(admin.url === "https://cantus.example", `app key server prefilled (${admin.url})`);
+  await page.fill("#cantus-app-key", "cfk_bad");
+  await page.click("#cantus-app-save");
+  await page.waitForTimeout(300);
+  admin = await page.evaluate(() => ({ msg: $("#cantus-admin-message").text(), err: $("#cantus-admin-message").hasClass("error"), userMsg: $("#cantus-message").text() }));
+  report(admin.err && admin.msg.includes("didn't accept") && admin.userMsg === "", `a wrong app key shows an error in the owner's box ("${admin.msg}")`);
+  await page.fill("#cantus-app-key", KEY);
+  await page.click("#cantus-app-save");
+  await page.waitForTimeout(300);
+  const appSent = await page.evaluate(() => window.__sent.filter((m) => m.op === "cantusAppSave").pop());
+  admin = await page.evaluate(() => ({ state: $("#cantus-admin-state").text(), key: $("#cantus-app-key").val(), remove: $("#cantus-app-remove").is(":visible"), msg: $("#cantus-admin-message").text() }));
+  report(appSent.appKey === KEY && appSent.url === "https://cantus.example", "Save app key sends the server and key");
+  report(admin.key === "" && admin.state.includes("cfk_…4321") && admin.state.includes("is on") && admin.remove, `app key saved ("${admin.state}" / "${admin.msg}")`);
+  report(!(await page.content()).includes(KEY), "the app key appears nowhere on the page");
   report(errors.length === 0, `no page errors${errors.length ? ": " + errors.join(" | ") : ""}`);
   await browser.close();
   process.exit(failures ? 1 : 0);

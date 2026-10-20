@@ -597,6 +597,20 @@
                         <p class="cantus-howto">
                             {{ _("Make a token in Cantus: Account → Connect other apps → Create token (it starts with cfa_). Revoking it there cuts Vocard off at once. You can also connect from Discord with /cantus link.") }}
                         </p>
+                        <!-- Only shown to the bot's owner, DJs and server admins: the bot's app key, which
+                             turns on /cantus link for everyone (cantusAppSave). -->
+                        <div class="cantus-fields" id="cantus-admin" style="display: none">
+                            <h3>{{ _("Bot app key (owner, DJs and server admins)") }}</h3>
+                            <p class="cantus-state" id="cantus-admin-state"></p>
+                            <input type="url" id="cantus-app-url" placeholder="https://your-cantus-server" autocomplete="off" />
+                            <input type="password" id="cantus-app-key" placeholder="cfk_…" autocomplete="off" />
+                            <div class="cantus-actions">
+                                <div class="cantus-action primary" id="cantus-app-save">{{ _("Save app key") }}</div>
+                                <div class="cantus-action" id="cantus-app-remove" style="display: none">{{ _("Remove") }}</div>
+                            </div>
+                            <p class="cantus-message" id="cantus-admin-message"></p>
+                            <p class="cantus-howto">{{ _("In Cantus: Admin → Apps → New app key (it starts with cfk_, shown once). It turns on /cantus link for everyone and works right away; deleting the key in Cantus unlinks everyone who linked through it.") }}</p>
+                        </div>
                     </div>
                     {% include "footer.html" %}
                 </div>

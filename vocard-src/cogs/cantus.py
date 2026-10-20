@@ -50,6 +50,7 @@ class Cantus(commands.Cog, name="cantus"):
 
     async def cog_load(self) -> None:
         await cantus.load_gains()
+        await cantus.load_app()
 
     # --- autocomplete ------------------------------------------------------
 

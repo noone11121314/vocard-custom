@@ -2545,6 +2545,17 @@ library"; a token connection wins if a user has both):
   not_linked` if the user hasn't allowed it. Without `cantus` settings,
   `/cantus link` points to the dashboard instead.
 
+**App key from the dashboard** (user: "anything on the webpage to paste
+the admin app key?", then "those who also have the DJ role"): Settings ->
+Cantus has a "Bot app key" box, shown only to the bot's owner on Discord
+(`bot.is_owner`), `bot_access_user`s, and DJs / server admins in any server
+the bot shares with them (the cache manager's check). The key is bot-wide, so
+any of them sets it for every server. Save checks it against the server (a
+made-up pairing code: 404 = key accepted, 401/403 = refused), stores it in
+Mongo `CantusConfig` and uses it at once (`_app_override`, loaded again at
+startup; wins over settings.json) - no restart. The page shows `cfk_…<last
+4>` only; `cantusAppSave` messages are never logged.
+
 **Only public servers** (user-given addresses, user's choice of "any
 server"): a server typed in the dashboard could otherwise make the bot (or
 Lavalink) fetch internal addresses (Lavalink's API, Mongo, the stream
@@ -2619,7 +2630,7 @@ which `main.py` does only when `settings.json` -> `version` differs from
 registered (the bot writes it back). Not yet tried end to end against the
 real Cantus.
 
-Tests: `tests/unit/test_patch46_cantus.py` (44): headers for both modes,
+Tests: `tests/unit/test_patch46_cantus.py` (51): headers for both modes,
 409 not-linked, unconfigured pairing makes no calls, search limit/offset,
 pairing pending -> linked and expired/unknown codes, disconnect forgets
 everything, queued track metadata with no link inside, song lookup, link
@@ -2631,7 +2642,9 @@ stores and uses the token, a bad token isn't stored, status/replies never
 contain the token, 8 private/internal addresses refused, malformed addresses
 refused, normalization, a play link on another server refused, the resolver
 refuses names pointing inside, log redaction (`cfa_` tokens and `cfk_` app
-keys), Deny on the pairing page stops the wait. Real MongoDB: connections and
+keys), Deny on the pairing page stops the wait; the app key: saved and used
+at once, a wrong one refused and not saved, survives a restart, removable,
+DJ/owner only, the page gets only a hint, never logged. Real MongoDB: connections and
 gains stored apart from the user record, replaced not duplicated.
 `dashboard/tests/cantus_check.js` (real Chromium, 11 checks): status on
 opening Settings, prefilled server, error shown, Save sends once and clears

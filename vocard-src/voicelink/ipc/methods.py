@@ -867,6 +867,26 @@ def _cantus_message(e) -> str:
     return "Couldn't reach that server - check the address and try again."
 
 
+async def _is_bot_admin(bot: commands.Bot, user_id: int, data: Dict = None) -> bool:
+    """Patch 46: who may set the bot's Cantus app key - the bot's owner on
+    Discord (the application's owner or team), a bot_access_user, or (user's
+    call) a DJ / server admin in any server the bot shares with them, same
+    check as the cache manager. The key is bot-wide, so any of them changes
+    it for every server."""
+    if user_id in Config().bot_access_user:
+        return True
+    try:
+        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+        if user and await bot.is_owner(user):
+            return True
+    except Exception:
+        pass
+    try:
+        return isinstance(await _require_cache_manager_permission(bot, {**(data or {}), "userId": str(user_id)}), int)
+    except Exception:
+        return False
+
+
 async def cantusStatus(bot: commands.Bot, data: Dict, message: str = None, ok: bool = True) -> Dict:
     """Patch 46: the dashboard's Cantus section - whether this Discord user
     is connected (token or pairing), as whom, and with how many songs. Never
@@ -878,6 +898,8 @@ async def cantusStatus(bot: commands.Bot, data: Dict, message: str = None, ok: b
     except Exception:
         state = {"connected": False}
     reply = {"op": "cantusStatus", "userId": str(user_id), **state}
+    if await _is_bot_admin(bot, user_id, data):
+        reply["admin"] = {"configured": cantus.is_configured(), "url": cantus.base_url(), "keyHint": cantus.app_key_hint()}
     if message:
         reply.update(message=message, ok=ok)
     return reply
@@ -891,6 +913,28 @@ async def cantusConnect(bot: commands.Bot, data: Dict) -> Dict:
     except cantus.CantusError as e:
         return await cantusStatus(bot, data, _cantus_message(e), ok=False)
     return await cantusStatus(bot, data, f"Connected as {account.get('username') or '?'}.")
+
+
+async def cantusAppSave(bot: commands.Bot, data: Dict) -> Dict:
+    """Patch 46: an admin pastes the bot's Cantus app key (cfk_...) in the
+    dashboard; it's checked, saved in Mongo and used at once."""
+    from voicelink import cantus
+    if not await _is_bot_admin(bot, int(data.get("userId")), data):
+        return await cantusStatus(bot, data, "Only the bot's owner, DJs and server admins can set the app key.", ok=False)
+    try:
+        await cantus.save_app(str(data.get("url") or ""), str(data.get("appKey") or ""))
+    except cantus.CantusError as e:
+        text = "Cantus didn't accept that app key." if e.code == "bad_key" else _cantus_message(e)
+        return await cantusStatus(bot, data, text, ok=False)
+    return await cantusStatus(bot, data, "App key saved - /cantus link works now.")
+
+
+async def cantusAppRemove(bot: commands.Bot, data: Dict) -> Dict:
+    from voicelink import cantus
+    if not await _is_bot_admin(bot, int(data.get("userId")), data):
+        return await cantusStatus(bot, data, "Only the bot's owner, DJs and server admins can change the app key.", ok=False)
+    await cantus.remove_app()
+    return await cantusStatus(bot, data, "App key removed from the dashboard settings.")
 
 
 async def cantusDisconnect(bot: commands.Bot, data: Dict) -> Dict:
@@ -1148,6 +1192,8 @@ METHODS: Dict[str, Union[SystemMethod, PlayerMethod]] = {
     "cantusStatus": SystemMethod(cantusStatus, credit=2),
     "cantusConnect": SystemMethod(cantusConnect, credit=10),
     "cantusDisconnect": SystemMethod(cantusDisconnect, credit=5),
+    "cantusAppSave": SystemMethod(cantusAppSave, credit=10),
+    "cantusAppRemove": SystemMethod(cantusAppRemove, credit=5),
     "getGuildTopTracks": SystemMethod(getGuildTopTracks, credit=2),
     "initPlayer": PlayerMethod(initPlayer),
     "skipTo": PlayerMethod(skipTo),
