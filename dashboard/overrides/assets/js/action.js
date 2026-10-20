@@ -1375,6 +1375,7 @@ $(document).ready(function () {
 
                 case "load-settings-page":
                     changePage("user-settings-page")
+                    player.send({ op: "cantusStatus" }) // Patch 46
                     break
 
                 default:
@@ -1646,6 +1647,23 @@ $(document).ready(function () {
 
         const $userSettingsContainer = $target.closest("#user-settings-page")
         if ($userSettingsContainer.length) {
+            // Patch 46: Cantus connect / disconnect. The token field is
+            // cleared as soon as it's sent; it's never filled back in.
+            if ($target.closest("#cantus-save").length) {
+                const server = $("#cantus-server").val().trim()
+                const token = $("#cantus-token").val().trim()
+                if (!server || !token) {
+                    return $("#cantus-message").removeClass("error").addClass("error").text("Enter the server address and a token.")
+                }
+                $("#cantus-token").val("")
+                $("#cantus-message").removeClass("error").text("Checking…")
+                return player.send({ op: "cantusConnect", server, token })
+            }
+            if ($target.closest("#cantus-disconnect").length) {
+                $("#cantus-message").removeClass("error").text("Disconnecting…")
+                return player.send({ op: "cantusDisconnect" })
+            }
+
             const $selectContainer = $target.closest(".select-container")
             if ($selectContainer.length) {
                 const $option = $target.closest(".option")

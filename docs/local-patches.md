@@ -2524,77 +2524,113 @@ song with play count, grouping, Load more, tabs, click to add).
 ## Patch 46 — Cantus Flaccus: play your own songs and playlists (issue #1)
 
 User/issue #1: let Vocard play a member's own library from Cantus Flaccus
-(their lossless music server) through its new API. Cantus never calls Vocard.
+(their lossless music server) through its API. Cantus never calls Vocard.
 
-**Setup:** `settings.json` -> `"cantus": {"url", "app_key"}` (`Config.cantus`).
-The app key is the bot's one credential (a Cantus admin makes it); without
-both, every `/cantus` command just says Cantus isn't set up. Every API call
-sends `Authorization: Bearer <app key>` + `X-Cantus-Discord-User: <id>`;
-Cantus answers for that Discord user's linked account, `409 not_linked` if
-none. No per-user Cantus credential is stored in Vocard (the issue's first
-plan, personal tokens, was replaced by pairing).
+**Two ways to connect** (both end up as "this Discord user's Cantus
+library"; a token connection wins if a user has both):
+- **Token, from the dashboard** (Settings -> Cantus): the member's Cantus
+  server address and a personal `cfa_` token (Cantus -> Account -> Connect
+  other apps -> Create token). Save checks it with `GET /me` (401 -> "That
+  token isn't valid (or was revoked)") and stores `{server, token,
+  username}` in Mongo `CantusLinks`, keyed by Discord id: its own
+  collection, never part of the user document the dashboard receives. The
+  page then only ever sees `cfa_…<last 4>`. Calls go to *their* server with
+  `Authorization: Bearer <their token>` and no Discord header.
+- **Pairing, from Discord** (`/cantus link`): `settings.json` -> `"cantus":
+  {"url", "app_key"}` (the bot's key, made by a Cantus admin). `POST
+  /link/start` -> the bot sends the Cantus link (valid 10 minutes), polls `GET
+  /link/{code}` every 3s until "linked" / "expired". Calls go to the
+  configured server with the app key + `X-Cantus-Discord-User: <id>`; `409
+  not_linked` if the user hasn't allowed it. Without `cantus` settings,
+  `/cantus link` points to the dashboard instead.
+
+**Only public servers** (user-given addresses, user's choice of "any
+server"): a server typed in the dashboard could otherwise make the bot (or
+Lavalink) fetch internal addresses (Lavalink's API, Mongo, the stream
+proxy, cloud metadata) - SSRF. So for token connections:
+`normalize_server()` keeps only `scheme://host[:port]` (http/https, no
+credentials); `check_public_url()` resolves the host and refuses anything
+that isn't a global address (private, loopback, link-local, CGNAT, Docker
+names), before saving, before every call and before handing a play link to
+Lavalink; the session itself uses `_PublicResolver`, which refuses the same
+at connect time (covers redirects and DNS changing between check and use);
+a play link must be a path or on the same server (`_full_url`). The one
+remaining gap: Lavalink resolves the play link's host again itself, so a
+host that flips to an internal address in that instant could still be
+fetched (it would only be played as audio).
 
 **Commands** (`cogs/cantus.py`, slash only, account replies ephemeral):
-- `/cantus link`: `POST /link/start` -> sends the Cantus link (valid 10
-  minutes), polls `GET /link/{code}` every 3s until "linked" / "expired",
-  then says which Cantus account it linked. `/cantus unlink`: `DELETE /link`.
-- `/cantus play <song>`: autocomplete from `GET /songs?q=` (25 matches,
-  "Title - Artists"); a picked entry is the song id, fetched through its
-  `stream` endpoint (the only per-song endpoint); free text is searched.
-- `/cantus playlist <name>`: autocomplete from `GET /playlists` (with song
-  counts); queues every song of `GET /playlists/{id}` in order.
-- `/cantus help`: the linking steps.
+`/cantus play <song>` (autocomplete from `GET /songs?q=`, 25 matches; a
+picked entry is the song id, looked up through its `stream` endpoint, the
+only per-song endpoint; free text is searched), `/cantus playlist <name>`
+(autocomplete from `GET /playlists`; queues `GET /playlists/{id}` in
+order, a snapshot), `/cantus link`, `/cantus unlink` (forgets a token and
+ends a pairing), `/cantus help`. Nothing from the library is kept between
+commands: Cantus is asked live every time (issue comment).
+
+**Dashboard** (`index.html` Settings page, `#cantus-settings`): Server
+(prefilled with the configured server) + Token (password field, cleared as
+soon as it's sent), Save, Disconnect, the connected state ("Connected as
+<user> (<n> songs) - token cfa_…1234 on <server>") and a how-to. IPC:
+`cantusStatus`, `cantusConnect`, `cantusDisconnect` (`ipc/methods.py`).
 
 **Tracks** (`voicelink/cantus.py`): a queued Cantus song is a Track we
 encode ourselves (`build_track`), `sourceName "cantus"`, the song's real
-title / artists / length / cover / ISRC, `identifier
-"cantus:<discord id>:<song id>"` (whose library it came from) and a unique
-`uri` per song (dedupe and the Home lists key on it). It holds **no play
-link**: they're signed and expire in 12h, which would break a song waiting
-in a long queue, resumed after a restart (session restore) or replayed from
-History / Full history. `Player.play()` instead calls
-`cantus.resolve_for_play()` right before the song starts: it fetches a
-link (one is reused for up to 6h), has Lavalink load it with the http
-source, and plays that, while queue, history and dashboards keep the
-metadata track (same split as YouTube's direct resolve).
+title / artists / length / cover / ISRC, `identifier "cantus:<discord
+id>:<song id>"` (whose library) and a unique `uri` per song (dedupe and the
+Home lists key on it). It holds **no play link**: they're signed and expire
+in 12h, which would break a song waiting in a long queue, resumed after a
+restart or replayed from History / Full history. `Player.play()` calls
+`cantus.resolve_for_play()` right before the song starts: a fresh link
+(one fetched in the last minute, when the song was picked, is reused), loaded
+by Lavalink's http source, while queue, history and dashboards keep the
+metadata track. Because links are fetched per song, a removed song or a
+disconnected user takes effect on the next song.
 
-**Whose library:** the requester's first; if their library doesn't have
-the song (or they aren't linked), the owner's, but only while the owner is a
-member of this server - so a friend can replay the owner's song from this
-server's history, and nobody can reach a library from outside it.
+**Whose library:** the requester's first; otherwise the owner's, only while
+the owner is a member of this server - a friend can replay the owner's song
+from this server's history, nobody can reach a library from outside it.
 
-**Skipping:** `CantusUnavailable` from `play()` is caught in `do_next`, which
-posts "Skipped **<song>**: <reason>" (gone in 30s) and moves on, without the
-5s error pause. Reasons: not linked, app key refused (401/403), no longer in
-the library (404), Cantus unreachable, file couldn't be loaded (a reused link
-that fails is replaced once first).
+**Skipping:** `CantusUnavailable` from `play()` is caught in `do_next`,
+which posts "Skipped **<song>**: <reason>" (gone in 30s) and moves on
+without the 5s error pause. Reasons: not connected, token revoked (reconnect
+in the dashboard), app key refused, no longer in the library, server address
+not allowed, Cantus unreachable, file couldn't be loaded.
 
-**No audio cache** (user's call): Cantus serves its own files with seeking,
-so songs stream straight from it; nothing is written to `stream_cache`.
-**Loudness:** an unmeasured song plays at the stream cache's typical gain
-(Patch 35); its first play also measures it in the background (ffmpeg
-`ebur128`, low priority, reading the link once) and stores the gain in Mongo
-`CantusGains`, so later plays are normalized exactly like YouTube songs.
-Suggested to Cantus: ship a ReplayGain value per song, which would remove
-that one extra read.
+**No audio cache** (user's call): songs stream straight from Cantus,
+nothing is written to `stream_cache`. **Loudness:** an unmeasured song plays
+at the stream cache's typical gain (Patch 35); its first play measures it in
+the background (ffmpeg `ebur128`, low priority) and stores the gain in Mongo
+`CantusGains` (keyed `<server host>:<song id>`), so later plays are
+normalized exactly. Suggested to Cantus: a loudness value per song.
 
-**Credentials never logged:** the app key isn't; play links aren't (the
-measurement logs `cantus:<song id>`, not the URL). Lavalink's own request log
-does contain the link it was handed (one song, 12h) - unavoidable.
+**Credentials never logged or echoed:** the IPC client's debug log of every
+dashboard message now goes through `_redact()` (a `cantusConnect` message is
+not logged at all; `token` / `app_key` / `password` fields and anything
+shaped `cfa_…` are masked elsewhere); the measurement logs `cantus:<key>`,
+not the URL; replies to the dashboard never contain the token. Lavalink's
+own request log does contain the play link it was handed (one song, 12h).
 
-**Status:** built and unit-tested against a fake Cantus; the pairing
-endpoints and app key are pending on the Cantus side, so it isn't deployed
-or tried against the real server yet.
+**Status:** built and tested against a fake Cantus; not deployed (branch
+`feat/cantus`) until it's been tried against the real server.
 
-Tests: new `tests/unit/test_patch46_cantus.py` (18): headers on every call,
-409 not-linked, unconfigured makes no calls, search limit/offset, pairing
-pending -> linked and expired/unknown codes, unlink forgets cached links,
-queued track metadata with no link inside, song lookup, link loaded into
-Lavalink and reused, stale link replaced once, a friend's replay uses the
-owner's library, the owner's only while in the server, removed song and
-revoked key skip reasons, typical vs measured gain, the measurement never
-logs the link, `Player.play()` sends the fresh track and keeps the metadata
-track as current.
+Tests: `tests/unit/test_patch46_cantus.py` (42): headers for both modes,
+409 not-linked, unconfigured pairing makes no calls, search limit/offset,
+pairing pending -> linked and expired/unknown codes, disconnect forgets
+everything, queued track metadata with no link inside, song lookup, link
+loaded into Lavalink, a stale link replaced once, a friend's replay uses the
+owner's library (only while in the server), skip reasons (removed song,
+revoked app key, revoked token), typical vs measured gain, the measurement
+never logs the link, `Player.play()` sends the fresh track; token connect
+stores and uses the token, a bad token isn't stored, status/replies never
+contain the token, 8 private/internal addresses refused, malformed addresses
+refused, normalization, a play link on another server refused, the resolver
+refuses names pointing inside, log redaction. Real MongoDB: connections and
+gains stored apart from the user record, replaced not duplicated.
+`dashboard/tests/cantus_check.js` (real Chromium, 11 checks): status on
+opening Settings, prefilled server, error shown, Save sends once and clears
+the token field, connected state with only `cfa_…9876`, the token appears
+nowhere on the page, Disconnect.
 
 ---
 

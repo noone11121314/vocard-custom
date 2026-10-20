@@ -1,12 +1,26 @@
 import aiohttp
 import asyncio
 import logging
+import re
 import voicelink
 
 from discord.ext import commands
 from typing import Optional
 
 from .methods import process_methods
+
+# Patch 46: a Cantus token typed into the dashboard arrives here; keep it
+# (and anything else shaped like a secret field) out of the debug log.
+_SECRET_FIELD = re.compile(r"""(['"]?(?:token|app_key|password)['"]?\s*[:=]\s*\\?['"])[^'"\\]*""", re.IGNORECASE)
+_CANTUS_TOKEN = re.compile(r"cfa_[A-Za-z0-9_\-]+")
+
+
+def _redact(message) -> str:
+    text = str(message)
+    if "cantusConnect" in text:
+        return "<cantusConnect message - not logged, it carries a token>"
+    text = _CANTUS_TOKEN.sub("cfa_…", text)
+    return _SECRET_FIELD.sub(r"\1…", text)
 
 class IPCClient:
     def __init__(
@@ -82,7 +96,7 @@ class IPCClient:
         while True:
             try:
                 msg = await self._websocket.receive()
-                self._logger.debug(f"Received Message: {msg}")
+                self._logger.debug(f"Received Message: {_redact(msg)}")
             except asyncio.CancelledError:
                 raise  # disconnect() cancelling the listener - not a dropped connection
             except:
@@ -102,19 +116,19 @@ class IPCClient:
         if self.is_connected:
             try:
                 await self._websocket.send_json(data)
-                self._logger.debug(f"Send Message: {data}")
+                self._logger.debug(f"Send Message: {_redact(data)}")
             except ConnectionResetError as _:
                 await self.disconnect()
                 await self.connect()
                 await self._websocket.send_json(data)
-                self._logger.debug(f"Send Message: {data}")
+                self._logger.debug(f"Send Message: {_redact(data)}")
 
     async def send(self, data: dict):
         # Check if the websocket is still open
         if self.is_connected:
             try:
                 await self._websocket.send_json(data)
-                self._logger.debug(f"Sent Message: {data}")
+                self._logger.debug(f"Sent Message: {_redact(data)}")
             except ConnectionResetError:
                 self._logger.warning("Connection lost, attempting to reconnect.")
                 await self._handle_reconnect(data)
@@ -130,7 +144,7 @@ class IPCClient:
         if self.is_connected:
             try:
                 await self._websocket.send_json(data)
-                self._logger.debug(f"Sent Message on reconnect: {data}")
+                self._logger.debug(f"Sent Message on reconnect: {_redact(data)}")
             except Exception as e:
                 self._logger.error(f"Failed to send message on reconnect: {e}")
         else:

@@ -563,6 +563,41 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Patch 46: connect a Cantus Flaccus account with a server
+                         address + personal token (cantusStatus / cantusConnect /
+                         cantusDisconnect in methods.py). The token is sent once and
+                         never shown again - only cfa_…<last 4>. -->
+                    <div class="section" id="cantus-settings">
+                        <style>
+                            #cantus-settings .cantus-fields { display: flex; flex-direction: column; gap: 10px; max-width: 520px; margin-top: 12px; }
+                            #cantus-settings input { padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: inherit; font: inherit; }
+                            #cantus-settings .cantus-actions { display: flex; gap: 8px; }
+                            #cantus-settings .cantus-action { padding: 8px 18px; border-radius: 999px; cursor: pointer; background: rgba(255,255,255,0.1); }
+                            #cantus-settings .cantus-action.primary { background: var(--primary, #8957ff); color: #fff; }
+                            #cantus-settings .cantus-state { margin-top: 10px; }
+                            #cantus-settings .cantus-message.error { color: #ff6b6b; }
+                            #cantus-settings .cantus-howto { opacity: 0.7; font-size: 0.9em; margin-top: 10px; max-width: 520px; }
+                        </style>
+                        <div class="header">
+                            <div class="sub-title">
+                                <p>{{ _("Play your own songs and playlists with /cantus play and /cantus playlist") }}</p>
+                                <h2>{{ _("Cantus") }}</h2>
+                            </div>
+                        </div>
+                        <p class="cantus-state" id="cantus-state">{{ _("Checking…") }}</p>
+                        <div class="cantus-fields" id="cantus-form">
+                            <input type="url" id="cantus-server" placeholder="https://your-cantus-server" autocomplete="off" />
+                            <input type="password" id="cantus-token" placeholder="cfa_…" autocomplete="off" />
+                            <div class="cantus-actions">
+                                <div class="cantus-action primary" id="cantus-save">{{ _("Save") }}</div>
+                                <div class="cantus-action" id="cantus-disconnect" style="display: none">{{ _("Disconnect") }}</div>
+                            </div>
+                            <p class="cantus-message" id="cantus-message"></p>
+                        </div>
+                        <p class="cantus-howto">
+                            {{ _("Make a token in Cantus: Account → Connect other apps → Create token (it starts with cfa_). Revoking it there cuts Vocard off at once. You can also connect from Discord with /cantus link.") }}
+                        </p>
+                    </div>
                     {% include "footer.html" %}
                 </div>
             </div>

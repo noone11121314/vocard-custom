@@ -15,20 +15,25 @@ from voicelink import cantus
 
 HELP_TEXT = (
     "**Cantus Flaccus in Vocard**\n"
-    "1. `/cantus link` - I send you a link (valid 10 minutes). Open it while signed in to Cantus and press **Allow**.\n"
+    "1. Connect once, either way:\n"
+    "   - `/cantus link` - I send you a link (valid 10 minutes). Open it while signed in to Cantus and press **Allow**.\n"
+    "   - or the Vocard dashboard -> Settings -> Cantus: your server and a personal token "
+    "(Cantus -> Account -> Connect other apps -> Create token). Revoking the token in Cantus cuts Vocard off.\n"
     "2. `/cantus play` - type to search your library, pick a song.\n"
     "3. `/cantus playlist` - queue one of your playlists.\n"
-    "`/cantus unlink` disconnects (or Cantus -> Account -> Connected apps -> Disconnect)."
+    "`/cantus unlink` (or Disconnect in the dashboard) disconnects."
 )
-NOT_LINKED = "Your Discord account isn't linked to Cantus yet - use `/cantus link`."
-NOT_CONFIGURED = "Cantus isn't set up on this bot yet (settings.json -> `cantus`)."
+NOT_LINKED = "Your Discord account isn't connected to Cantus yet - use `/cantus link`, or connect with a token in the dashboard (Settings -> Cantus)."
+NO_PAIRING = "Linking from Discord isn't set up on this bot - connect with a token in the dashboard instead (Settings -> Cantus)."
 
 
 def _error_text(e: cantus.CantusError) -> str:
-    if e.status == 0 and e.code == "not_configured":
-        return NOT_CONFIGURED
     if e.not_linked:
         return NOT_LINKED
+    if e.code == "token_revoked":
+        return "Your Cantus token isn't valid any more (revoked?) - reconnect in the dashboard (Settings -> Cantus)."
+    if e.code in ("private_address", "bad_url", "foreign_link"):
+        return "Your Cantus server address isn't allowed - reconnect in the dashboard."
     if e.status in (401, 403):
         return "Cantus refused the bot - its app key may have been revoked."
     if e.status == 404:
@@ -73,7 +78,7 @@ class Cantus(commands.Cog, name="cantus"):
     @group.command(name="link", description="Connect your Cantus account.")
     async def link(self, interaction: discord.Interaction) -> None:
         if not cantus.is_configured():
-            return await interaction.response.send_message(NOT_CONFIGURED, ephemeral=True)
+            return await interaction.response.send_message(NO_PAIRING, ephemeral=True)
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             pairing = await cantus.start_link(interaction.user.id, interaction.user.name)
@@ -99,10 +104,9 @@ class Cantus(commands.Cog, name="cantus"):
     async def unlink(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         try:
-            await cantus.unlink(interaction.user.id)
+            await cantus.disconnect(interaction.user.id)
         except cantus.CantusError as e:
-            if not e.not_linked:
-                return await interaction.followup.send(_error_text(e), ephemeral=True)
+            return await interaction.followup.send(_error_text(e), ephemeral=True)
         await interaction.followup.send("Your Cantus account is disconnected.", ephemeral=True)
 
     # --- playing -----------------------------------------------------------
@@ -138,25 +142,22 @@ class Cantus(commands.Cog, name="cantus"):
     @app_commands.describe(song="Start typing to search your library")
     @app_commands.autocomplete(song=song_autocomplete)
     async def play(self, interaction: discord.Interaction, song: str) -> None:
-        if not cantus.is_configured():
-            return await interaction.response.send_message(NOT_CONFIGURED, ephemeral=True)
         await interaction.response.defer()
         try:
             found = await self._find_song(interaction.user.id, song)
+            server = await cantus.server_of(interaction.user.id)
             player = await self._player_for(interaction)
         except cantus.CantusError as e:
             return await interaction.followup.send(_error_text(e), ephemeral=True)
         except voicelink.VoicelinkException as e:
             return await interaction.followup.send(str(e), ephemeral=True)
-        track = cantus.build_track(found, interaction.user.id, interaction.user)
+        track = cantus.build_track(found, interaction.user.id, interaction.user, server)
         await self._queue(interaction, player, [track], f"Added **{track.title}** - {track.author} from Cantus.")
 
     @group.command(name="playlist", description="Queue one of your Cantus playlists.")
     @app_commands.describe(name="Start typing a playlist name")
     @app_commands.autocomplete(name=playlist_autocomplete)
     async def playlist(self, interaction: discord.Interaction, name: str) -> None:
-        if not cantus.is_configured():
-            return await interaction.response.send_message(NOT_CONFIGURED, ephemeral=True)
         await interaction.response.defer()
         user_id = interaction.user.id
         try:
@@ -170,6 +171,7 @@ class Cantus(commands.Cog, name="cantus"):
                 if not match:
                     raise
                 data = await cantus.playlist(user_id, match["id"])
+            server = await cantus.server_of(user_id)
             player = await self._player_for(interaction)
         except cantus.CantusError as e:
             return await interaction.followup.send(_error_text(e), ephemeral=True)
@@ -178,7 +180,7 @@ class Cantus(commands.Cog, name="cantus"):
         songs = [s for s in data.get("songs", []) if s.get("id")]
         if not songs:
             return await interaction.followup.send(f"**{data.get('name', name)}** has no playable songs yet.", ephemeral=True)
-        tracks = [cantus.build_track(s, user_id, interaction.user) for s in songs]
+        tracks = [cantus.build_track(s, user_id, interaction.user, server) for s in songs]
         await self._queue(interaction, player, tracks, f"Added **{len(tracks)}** songs from your Cantus playlist **{data.get('name', name)}**.")
 
 

@@ -1029,8 +1029,7 @@ class Player(VoiceProtocol):
             # Patch 46: a fresh play link from Cantus (queued Cantus songs
             # never hold one - they expire). CantusUnavailable propagates to
             # do_next, which skips the song with a note.
-            encoded_track = await cantus.resolve_for_play(self, track)
-            self._loudness_gain = await cantus.gain(cantus.parse_identifier(track.identifier)[1])
+            encoded_track, self._loudness_gain = await cantus.resolve_for_play(self, track)
         else:
             # Non-youtube tracks (Spotify/SoundCloud/a Discord attachment)
             # are never disk-cached, so there's nothing to measure - always

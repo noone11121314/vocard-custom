@@ -268,3 +268,18 @@ async def test_paging_never_drops_songs_added_at_the_same_moment(db, monkeypatch
     p2 = await getFullHistory(MagicMock(), {"userId": "7006", "scope": "user", "offset": p1["offset"]})
     ids = [e["trackId"] for e in p1["events"] + p2["events"]]
     assert len(ids) == 150 and len(set(ids)) == 150 and p2["done"]
+
+
+async def test_cantus_connections_and_gains_are_stored_apart_from_the_user_record(db):
+    """Patch 46: a token connection lives in its own collection - never in
+    the user document the dashboard receives - and can be removed."""
+    await db.set_cantus_link(7010, {"server": "https://c.example", "token": "cfa_x1234", "username": "u"})
+    assert (await db.get_cantus_link(7010))["token"] == "cfa_x1234"
+    await db.set_cantus_link(7010, {"server": "https://c.example", "token": "cfa_y5678", "username": "u"})
+    assert (await db.get_cantus_link(7010))["token"] == "cfa_y5678"  # replaced, not duplicated
+    assert await db._db["CantusLinks"].count_documents({}) == 1
+    assert await db._users_db.count_documents({"_id": 7010}) == 0
+    assert await db.delete_cantus_link(7010) and await db.get_cantus_link(7010) is None
+
+    await db.set_cantus_gain("c.example:s1", 0.71)
+    assert await db.get_cantus_gains() == {"c.example:s1": 0.71}

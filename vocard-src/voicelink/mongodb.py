@@ -329,6 +329,26 @@ class MongoDBHandler:
         return [doc async for doc in cursor]
 
     @classmethod
+    async def get_cantus_link(cls, user_id: int) -> Optional[Dict[str, Any]]:
+        """Patch 46: a Discord user's Cantus token connection (own collection,
+        never part of the user document the dashboard receives)."""
+        if cls._db is None:
+            return None
+        return await cls._db["CantusLinks"].find_one({"_id": int(user_id)})
+
+    @classmethod
+    async def set_cantus_link(cls, user_id: int, link: Dict[str, Any]) -> None:
+        if cls._db is None:
+            return
+        await cls._db["CantusLinks"].replace_one({"_id": int(user_id)}, {"_id": int(user_id), **link}, upsert=True)
+
+    @classmethod
+    async def delete_cantus_link(cls, user_id: int) -> bool:
+        if cls._db is None:
+            return False
+        return (await cls._db["CantusLinks"].delete_one({"_id": int(user_id)})).deleted_count > 0
+
+    @classmethod
     async def set_cantus_gain(cls, song_id: str, gain: float) -> None:
         """Patch 46: a Cantus song's measured loudness gain."""
         if cls._db is None:

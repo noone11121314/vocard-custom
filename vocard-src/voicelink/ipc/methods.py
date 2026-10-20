@@ -848,6 +848,60 @@ async def getUserHistory(bot: commands.Bot, data: Dict) -> Dict:
         "addedHistory": added or [],
     }
 
+_CANTUS_MESSAGES = {
+    "token_revoked": "That token isn't valid (or was revoked).",
+    "bad_token": "That doesn't look like a Cantus token.",
+    "bad_url": "That server address isn't valid.",
+    "private_address": "That server address isn't allowed (it must be a public address).",
+    "unresolvable": "That server address couldn't be found.",
+}
+
+
+def _cantus_message(e) -> str:
+    if e.code in _CANTUS_MESSAGES:
+        return _CANTUS_MESSAGES[e.code]
+    if e.status == 401:
+        return _CANTUS_MESSAGES["token_revoked"]
+    if e.status in (404, 405) or e.status >= 500:
+        return "That server didn't answer like Cantus does - check the address."
+    return "Couldn't reach that server - check the address and try again."
+
+
+async def cantusStatus(bot: commands.Bot, data: Dict, message: str = None, ok: bool = True) -> Dict:
+    """Patch 46: the dashboard's Cantus section - whether this Discord user
+    is connected (token or pairing), as whom, and with how many songs. Never
+    includes the token (only cfa_…<last 4>)."""
+    from voicelink import cantus
+    user_id = int(data.get("userId"))
+    try:
+        state = await cantus.status(user_id)
+    except Exception:
+        state = {"connected": False}
+    reply = {"op": "cantusStatus", "userId": str(user_id), **state}
+    if message:
+        reply.update(message=message, ok=ok)
+    return reply
+
+
+async def cantusConnect(bot: commands.Bot, data: Dict) -> Dict:
+    """Patch 46: dashboard "Save" - connect with a server address + personal token."""
+    from voicelink import cantus
+    try:
+        account = await cantus.connect_token(int(data.get("userId")), str(data.get("server") or ""), str(data.get("token") or ""))
+    except cantus.CantusError as e:
+        return await cantusStatus(bot, data, _cantus_message(e), ok=False)
+    return await cantusStatus(bot, data, f"Connected as {account.get('username') or '?'}.")
+
+
+async def cantusDisconnect(bot: commands.Bot, data: Dict) -> Dict:
+    from voicelink import cantus
+    try:
+        await cantus.disconnect(int(data.get("userId")))
+    except cantus.CantusError:
+        return await cantusStatus(bot, data, "Disconnected here, but Cantus didn't confirm - try again.", ok=False)
+    return await cantusStatus(bot, data, "Disconnected.")
+
+
 async def getFullHistory(bot: commands.Bot, data: Dict) -> Dict:
     """Patch 45: the full history page, 100 songs at a time - each song once,
     at the last time it was played/added, with how many times - newest first.
@@ -1091,6 +1145,9 @@ METHODS: Dict[str, Union[SystemMethod, PlayerMethod]] = {
     "getGuildAddedHistory": SystemMethod(getGuildAddedHistory, credit=2),
     "getUserHistory": SystemMethod(getUserHistory, credit=2),
     "getFullHistory": SystemMethod(getFullHistory, credit=2),
+    "cantusStatus": SystemMethod(cantusStatus, credit=2),
+    "cantusConnect": SystemMethod(cantusConnect, credit=10),
+    "cantusDisconnect": SystemMethod(cantusDisconnect, credit=5),
     "getGuildTopTracks": SystemMethod(getGuildTopTracks, credit=2),
     "initPlayer": PlayerMethod(initPlayer),
     "skipTo": PlayerMethod(skipTo),

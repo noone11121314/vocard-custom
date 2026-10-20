@@ -394,6 +394,29 @@ const methods = {
         refreshHomePage(player);
     },
 
+    // Patch 46: the Cantus section of Settings. Shows who you're connected
+    // as; the token itself never comes back (only cfa_…<last 4>).
+    cantusStatus: function (player, data) {
+        const text = (s) => $("<div>").text(s == null ? "" : String(s)).html();
+        let state;
+        if (data.connected) {
+            const songs = data.songs != null ? ` (${text(data.songs)} songs)` : "";
+            const how = data.mode === "token" ? `token ${text(data.tokenHint)} on ${text(data.server)}` : "linked from Discord";
+            state = `Connected as <b>${text(data.username || "?")}</b>${songs} - ${how}`;
+            if (data.problem === "token_revoked") state += "<br>That token isn't valid any more - save a new one.";
+        } else {
+            state = "Not connected.";
+        }
+        $("#cantus-state").html(state);
+        $("#cantus-disconnect").toggle(!!data.connected);
+        if (!$("#cantus-server").val()) $("#cantus-server").val(data.server || data.defaultServer || "");
+        if (data.message !== undefined) {
+            $("#cantus-message").toggleClass("error", data.ok === false).text(data.message);
+        } else {
+            $("#cantus-message").removeClass("error").text("");
+        }
+    },
+
     // Patch 45: one page of the Full history. Ignores replies for a tab the
     // user has already left.
     getFullHistory: function (player, data) {

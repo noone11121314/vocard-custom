@@ -90,17 +90,23 @@ self-reloading dashboard pages, and no secrets in git or the image.
 ## Cantus Flaccus
 
 Members can play their own songs and playlists from a Cantus Flaccus server
-(`/cantus play`, `/cantus playlist`). Setup: a Cantus admin creates an app
-(Admin -> Apps -> New app "Vocard"), and its key goes in `settings.json`:
+(`/cantus play`, `/cantus playlist`). Each member connects once, either way:
 
-```json
-"cantus": {"url": "https://<your Cantus server>", "app_key": "<app key>"}
-```
+- **Dashboard -> Settings -> Cantus:** their Cantus server address and a
+  personal token (Cantus -> Account -> Connect other apps -> Create token,
+  starts with `cfa_`). Only public server addresses are accepted.
+- **`/cantus link` in Discord:** the bot sends a Cantus link (valid 10
+  minutes) to open while signed in, then press **Allow**. Needs the bot's app
+  key (a Cantus admin: Admin -> Apps -> New app "Vocard") in `settings.json`:
 
-Never commit it (`settings.json` is ignored). Each member then runs
-`/cantus link`, opens the link the bot sends (valid 10 minutes) while
-signed in to Cantus, and presses **Allow**. `/cantus unlink` (or Cantus ->
-Account -> Connected apps) disconnects; `/cantus help` repeats the steps.
+  ```json
+  "cantus": {"url": "https://<your Cantus server>", "app_key": "<app key>"}
+  ```
+
+  Never commit it (`settings.json` is ignored).
+
+`/cantus unlink` (or Disconnect in the dashboard) disconnects; revoking the
+token in Cantus cuts Vocard off at once; `/cantus help` repeats the steps.
 Songs stream straight from Cantus (not cached); see Patch 46 in
 [`docs/local-patches.md`](docs/local-patches.md).
 
