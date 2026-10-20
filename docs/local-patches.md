@@ -2399,6 +2399,50 @@ limit). Wired into `run_sync_test.sh` / `browser_check.sh`.
 
 ---
 
+## Patch 44 — Leave ~10s after being left alone; personal history across servers, shown first
+
+User: the bot should leave when it's alone in a channel (about 10s), and
+history should follow *them* across servers, with personal lists first and
+then the server's.
+
+**Leaving when alone** (`Player._schedule_alone_leave_timer`,
+`cogs/listeners.py` voice updates): when no person (only bots) is left in
+the bot's channel, it leaves after `timer_settings.alone_leave` seconds
+(default **10**; `inactive_player_cleanup`, 600s, is still the idle timer).
+In 24/7 mode the shared cleanup worker pauses instead of leaving. A person
+rejoining in time cancels it, and an idle player falls back to the normal
+10-minute timer. Before: everyone leaving only started the 10-minute
+timer, and nothing at all if the music was paused. Only people count as
+company: two bots left together (e.g. production and staging) still leave.
+The worker's check now uses `not m.bot` too.
+
+**Personal history:**
+- New `addedHistory` on each user's own record (`MongoDBHandler._user_base`),
+  written by `Player._record_user_added_history` on every add (non-bot
+  requesters, capped at 100). Being per user, it covers every server. It
+  starts empty: the existing per-server "Recently added" lists don't record
+  who added each song, so they can't be attributed.
+- `getUserHistory` returns `addedHistory` with the existing personal
+  `history` (played).
+- Home order: **Recently added by you**, **Recently played by you**, then
+  the server's **Recently played** / **Recently uploaded** / **Recently
+  added**, now labelled "Played in <server>" / "Every song queued in
+  <server> ..." (`getGuildHistory` / `getGuildAddedHistory` send
+  `guildName`).
+- `objects.js` `renderRecentTracks()` (shared by all five lists): newest
+  first, one card per song. The old code de-duplicated *before* reversing,
+  so a song played or added again kept its old, lower position.
+- The "no history yet" page now only shows when neither the user nor the
+  server has anything (`refreshHomePage()`). Before, it showed whenever the
+  *server* had no plays, which would have hidden the personal lists.
+
+Tests: new `tests/unit/test_patch44_personal_history_and_alone.py` (7); 2
+real-MongoDB tests (songs added in two servers land in one personal list;
+cap 100); `dashboard/tests/home_check.js` (real Chromium: order, server
+label, newest-first with repeats, personal-only, no-history page).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

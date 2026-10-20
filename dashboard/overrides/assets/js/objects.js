@@ -198,6 +198,61 @@ class Bot {
     }
 }
 
+// Patch 44: renders a history list newest-first, one card per song. The
+// lists are stored oldest-first; this used to de-duplicate *before*
+// reversing, so a song played again recently kept its old, lower position.
+// Returns how many cards it rendered.
+function renderRecentTracks(containerId, trackIds) {
+    const container = $(`#${containerId}`);
+    container.empty();
+    const seen = new Set();
+    [...(trackIds || [])].reverse().forEach((trackId) => {
+        let track;
+        try {
+            track = decode(trackId);
+        } catch (error) {
+            console.error(`Failed to decode track id ${trackId}: ${error}`);
+            return;
+        }
+        const key = track.uri || trackId;
+        if (seen.has(key)) return;
+        seen.add(key);
+        container.append(buildTrackCardHtml(track));
+    });
+    return container.children().length;
+}
+
+// Patch 44: "Played in <server>" etc. above the server's lists.
+function setGuildNameLabels(guildName) {
+    if (!guildName) return;
+    $(".guild-name-label").each(function () {
+        const template = $(this).data("template");
+        if (template) $(this).text(String(template).replace("{0}", guildName));
+    });
+}
+
+// Patch 44: the "no history yet" page only when neither the user nor the
+// server has anything - it used to show whenever the *server* had no plays,
+// hiding the personal lists. Also asks for today's recommendation (once)
+// based on whichever list has songs.
+function refreshHomePage(player) {
+    const { guild, user } = player.homeHas;
+    if (guild === false && user === false) {
+        changePage("no-history-found");
+        return;
+    }
+    if (guild || user) changePage("main-page");
+    const elements = $(
+        "#user-added-history-tracks, #user-history-tracks, #history-tracks-bot, #history-tracks-upload, #recommendation-tracks"
+    ).find("[data-id]");
+    const loader = $("#recommendation-tracks-loader");
+    if (!player.homeRecommendationAsked && loader.css("display") !== "none" && elements.length > 0) {
+        player.homeRecommendationAsked = true;
+        const randomElement = elements.eq(Math.floor(Math.random() * elements.length));
+        player.send({ op: "getRecommendation", trackId: randomElement.data("id"), callback: "main-page" });
+    }
+}
+
 const methods = {
     // The bot left the dashboard (restart/redeploy). Patch 29: the dashboard
     // server never re-attaches already-open pages when the bot comes back,
@@ -279,96 +334,35 @@ const methods = {
     // sections from this server's shared play history. The "uploaded"
     // section is hidden entirely when nobody's ever played an attachment
     // here, rather than showing an empty header.
+    // Home's server lists (Patch 9: "Recently played" / "Recently uploaded").
     getGuildHistory: function (player, data) {
-        const renderUnique = (containerId, trackIds) => {
-            const container = $(`#${containerId}`);
-            container.empty();
-            const seenUris = new Set();
-            [...new Set(trackIds || [])].reverse().forEach((trackId) => {
-                let track;
-                try {
-                    track = decode(trackId);
-                } catch (error) {
-                    console.error(`Failed to decode track id ${trackId}: ${error}`);
-                    return;
-                }
-                if (seenUris.has(track.uri)) return;
-                seenUris.add(track.uri);
-                container.append(buildTrackCardHtml(track));
-            });
-        };
-
-        const botHistory = data.botHistory || [];
-        const uploadHistory = data.uploadHistory || [];
-
-        renderUnique("history-tracks-bot", botHistory);
-        renderUnique("history-tracks-upload", uploadHistory);
-        $("#history-tracks-upload-section").toggle(uploadHistory.length > 0);
-
-        if (!botHistory.length && !uploadHistory.length) {
-            changePage("no-history-found");
-        } else {
-            changePage("main-page");
-        }
-
-        var elements = $(
-            "#history-tracks-bot, #history-tracks-upload, #recommendation-tracks"
-        ).find("[data-id]");
-        var loader = $("#recommendation-tracks-loader");
-        if (loader.css("display") !== "none" && elements.length > 0) {
-            var randomElement = elements.eq(
-                Math.floor(Math.random() * elements.length)
-            );
-            player.send({
-                op: "getRecommendation",
-                trackId: randomElement.data("id"),
-                callback: "main-page",
-            });
-        }
+        const played = renderRecentTracks("history-tracks-bot", data.botHistory);
+        const uploaded = renderRecentTracks("history-tracks-upload", data.uploadHistory);
+        $("#history-tracks-upload-section").toggle(uploaded > 0);
+        setGuildNameLabels(data.guildName);
+        player.homeHas.guild = played + uploaded > 0 || player.homeHas.guild === true;
+        refreshHomePage(player);
     },
 
-    // Patch 17: populates Home's "Recently added" section - every track
-    // the moment it's queued (regardless of whether it ever actually
-    // played), as opposed to getGuildHistory above which only logs a
-    // track once it starts playing.
+    // Home's "Recently added" for this server (Patch 17): every song queued
+    // here, played or not.
     getGuildAddedHistory: function (player, data) {
-        const container = $("#added-history-tracks");
-        container.empty();
-        const seenUris = new Set();
-        [...new Set(data.addedHistory || [])].reverse().forEach((trackId) => {
-            let track;
-            try {
-                track = decode(trackId);
-            } catch (error) {
-                console.error(`Failed to decode track id ${trackId}: ${error}`);
-                return;
-            }
-            if (seenUris.has(track.uri)) return;
-            seenUris.add(track.uri);
-            container.append(buildTrackCardHtml(track));
-        });
+        const added = renderRecentTracks("added-history-tracks", data.addedHistory);
+        setGuildNameLabels(data.guildName);
+        if (added > 0) player.homeHas.guild = true;
+        refreshHomePage(player);
     },
 
-    // Populates Home's "Recently played by you" section - this one user's
-    // own play history (getUserHistory in methods.py), separate from
-    // getGuildHistory above which is shared/guild-wide across all members.
+    // Patch 44: Home's personal lists, shown first - "Recently added by you"
+    // and "Recently played by you". Both live on the user's own record, so
+    // they cover every server.
     getUserHistory: function (player, data) {
-        const container = $("#user-history-tracks");
-        container.empty();
-        const seenUris = new Set();
-        [...new Set(data.history || [])].reverse().forEach((trackId) => {
-            let track;
-            try {
-                track = decode(trackId);
-            } catch (error) {
-                console.error(`Failed to decode track id ${trackId}: ${error}`);
-                return;
-            }
-            if (seenUris.has(track.uri)) return;
-            seenUris.add(track.uri);
-            container.append(buildTrackCardHtml(track));
-        });
-        $("#user-history-section").toggle(container.children().length > 0);
+        const added = renderRecentTracks("user-added-history-tracks", data.addedHistory);
+        const played = renderRecentTracks("user-history-tracks", data.history);
+        $("#user-added-history-section").toggle(added > 0);
+        $("#user-history-section").toggle(played > 0);
+        player.homeHas.user = added + played > 0;
+        refreshHomePage(player);
     },
 
     // Patch 9: populates Explore's "Trending Songs" (bot-searched) and "Top
@@ -1304,6 +1298,10 @@ class Player {
         this.prefetchStatuses = {};
         this.cacheStats = { entries: 0, approxBytes: 0 };
         this._lastAddTracksSend = null;
+        // Patch 44: what the Home lists found (true/false; undefined = not
+        // answered yet) - see refreshHomePage().
+        this.homeHas = { guild: undefined, user: undefined };
+        this.homeRecommendationAsked = false;
 
         this.bots = new Map();
         this.selectedBot = null;

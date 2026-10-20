@@ -30,6 +30,9 @@ technical write-up (cause, fix, files, tests) is in
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
+- The bot leaves about 10 seconds after it's left alone in its voice
+  channel (adjustable: `timer_settings.alone_leave`); 24/7 mode pauses
+  instead. (44)
 - Far fewer songs are streamed instead of cached: yt-dlp now has the
   JavaScript runtime YouTube requires, and when YouTube's bot check blocks
   yt-dlp the song is fetched through invidious-companion and cached anyway.
@@ -46,6 +49,9 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- Home shows your own lists first - "Recently added by you" and "Recently
+  played by you", covering every server - then the server's lists,
+  labelled with its name. All lists are newest-first. (44)
 - The dashboard works in several tabs or on several devices at once; they
   used to kick each other off in an endless reload loop with a red error
   bar, and a background tab went blank. "Rate limited" no longer takes

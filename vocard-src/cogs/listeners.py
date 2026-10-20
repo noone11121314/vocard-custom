@@ -221,9 +221,13 @@ class Listeners(commands.Cog):
             if player.is_paused and len([m for m in player.channel.members if not m.bot or not m.voice.self_deaf]) == 1:
                 await player.set_pause(False, member)
                     
-        if not is_joined:
-            if not player.is_paused and len([m for m in player.channel.members if not m.bot or not m.voice.self_deaf]) == 0:
-                player._schedule_inactive_cleanup_timer()
+        # Patch 44: left alone (only bots remain) -> leave after ~10s; someone
+        # (a person) joining in time cancels it.
+        humans = [m for m in player.channel.members if not m.bot]
+        if not is_joined and not humans:
+            player._schedule_alone_leave_timer()
+        elif is_joined and not member.bot:
+            player._cancel_alone_leave_timer()
 
         # if dj is not in the channel, find a new DJ
         if player.dj not in player.channel.members:

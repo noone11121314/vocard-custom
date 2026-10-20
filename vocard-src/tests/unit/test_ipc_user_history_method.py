@@ -18,8 +18,10 @@ async def test_returns_the_users_own_history(monkeypatch):
 
     result = await getUserHistory(bot=None, data={"userId": "42"})
 
-    get_user.assert_awaited_once_with(42, d_type="history")
-    assert result == {"op": "getUserHistory", "userId": "42", "history": ["ENC_A", "ENC_B"]}
+    get_user.assert_any_await(42, d_type="history")
+    get_user.assert_any_await(42, d_type="addedHistory")  # Patch 44
+    assert result["op"] == "getUserHistory" and result["userId"] == "42"
+    assert result["history"] == ["ENC_A", "ENC_B"]
 
 
 async def test_defaults_to_an_empty_list_when_the_user_has_no_history(monkeypatch):

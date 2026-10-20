@@ -49,6 +49,7 @@ class UserData(TypedDict):
     _id: int
     playlist: Dict[str, Playlist]
     history: List[Dict[str, Any]]
+    addedHistory: List[str]  # Patch 44: every song this user added, any server
     inbox: List[Dict[str, Any]]
 
 UpdateOperationType = Literal["$set", "$unset", "$inc", "$push", "$pull"]
@@ -88,6 +89,7 @@ class MongoDBHandler:
             }
         },
         "history": [],
+        "addedHistory": [],
         "inbox": [],
     }
 

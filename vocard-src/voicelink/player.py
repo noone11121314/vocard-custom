@@ -188,6 +188,7 @@ class Player(VoiceProtocol):
         self._ph = PlayerPlaceholder(client, self)
         self._logger: Optional[logging.Logger] = self._node._logger
         self._inactive_cleanup_task: Optional[asyncio.Task[None]] = None
+        self._alone_timer_pending: bool = False  # Patch 44
 
     def __repr__(self):
         return (
@@ -751,6 +752,24 @@ class Player(VoiceProtocol):
                 exc_info=e
             )
 
+    async def _record_user_added_history(self, tracks: List[Track]) -> None:
+        """Patch 44: the personal "Recently added by you" list - every song
+        each (non-bot) requester added, kept on their own user record so it
+        follows them across servers. Capped at 100 like the guild list."""
+        try:
+            by_user: Dict[int, List[str]] = {}
+            for track in tracks:
+                requester = getattr(track, "requester", None)
+                if requester is None or getattr(requester, "bot", False):
+                    continue
+                by_user.setdefault(requester.id, []).append(track.track_id)
+            for user_id, track_ids in by_user.items():
+                await MongoDBHandler.update_user(user_id, {
+                    "$push": {"addedHistory": {"$each": track_ids, "$slice": -100}},
+                })
+        except Exception as e:
+            self._logger.debug(f"Failed to record user added history for {len(tracks)} track(s)", exc_info=e)
+
     async def _record_guild_added_history(self, tracks: List[Track]) -> None:
         """Patch 17: records every track the moment it's *added* to the
         queue, per guild - a separate, broader list than
@@ -1065,10 +1084,33 @@ class Player(VoiceProtocol):
     def _schedule_inactive_cleanup_timer(self) -> None:
         """Schedules per-player cleanup after inactivity."""
         self._cancel_inactive_cleanup_timer()
+        self._alone_timer_pending = False
         seconds = Config().timer_settings.get("inactive_player_cleanup", 600)
         self._inactive_cleanup_task = self.bot.loop.create_task(
             self._inactive_cleanup_timer_worker(seconds)
         )
+
+    def _schedule_alone_leave_timer(self) -> None:
+        """Patch 44: nobody (no human) is left in the voice channel - leave
+        after timer_settings.alone_leave seconds (default 10), or pause in
+        24/7 mode (the cleanup worker decides). Was only the 10-minute idle
+        timer, and not even that if the music was paused when people left."""
+        self._cancel_inactive_cleanup_timer()
+        seconds = Config().timer_settings.get("alone_leave", 10)
+        self._alone_timer_pending = True
+        self._inactive_cleanup_task = self.bot.loop.create_task(
+            self._inactive_cleanup_timer_worker(seconds)
+        )
+
+    def _cancel_alone_leave_timer(self) -> None:
+        """Someone came back before the bot left: cancel, and if the player is
+        idle, go back to the normal inactivity timer."""
+        if not getattr(self, "_alone_timer_pending", False):
+            return
+        self._alone_timer_pending = False
+        self._cancel_inactive_cleanup_timer()
+        if not self.is_playing and self.queue.is_empty:
+            self._schedule_inactive_cleanup_timer()
         
     async def add_track(self, raw_tracks: Union[Track, List[Track]], *, start_time: int = 0, end_time: int = 0, at_front: bool = False, duplicate: bool = True) -> int:
         """Adds one or more tracks to the queue."""
@@ -1138,6 +1180,7 @@ class Player(VoiceProtocol):
                 self._prefetch_next_direct_track()
 
                 self._bot.loop.create_task(self._record_guild_added_history(tracks))
+                self._bot.loop.create_task(self._record_user_added_history(tracks))
 
                 return len(tracks) if is_list else position
     
@@ -1440,8 +1483,11 @@ class Player(VoiceProtocol):
             if self._guild.id not in self._node._players:
                 return
 
+            self._alone_timer_pending = False
             members = self.channel.members if self.channel else []
-            has_non_bot = any(not m.bot or not m.voice.self_deaf for m in members)
+            # Patch 44: only people count - two bots (e.g. production and
+            # staging) left together in a channel are still "alone".
+            has_non_bot = any(not m.bot for m in members)
             # Empty channel: always pause/teardown. If people remain: only when idle (not playing + empty queue).
             if has_non_bot and (self.is_playing or not self.queue.is_empty):
                 return

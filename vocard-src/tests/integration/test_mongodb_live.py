@@ -163,3 +163,31 @@ async def test_mute_keeps_the_saved_volume_and_unmute_restores_it(db):
     await updateVolume(player, MagicMock(), {"mute": False, "volume": 50})
     await _settle()
     assert player.volume == 60
+
+
+async def test_songs_added_in_different_servers_land_in_one_personal_list(db, monkeypatch):
+    """Patch 44: "Recently added by you" follows the user across servers."""
+    import types
+    await db._users_db.insert_one({"_id": 7001, "playlist": {}, "history": [], "addedHistory": [], "inbox": []})
+    me = types.SimpleNamespace(id=7001, bot=False)
+    in_server_a, in_server_b = _bare_player(), _bare_player()
+    in_server_b._guild = MagicMock(id=GUILD + 1)
+
+    await in_server_a._record_user_added_history([types.SimpleNamespace(track_id="A1", requester=me)])
+    await in_server_b._record_user_added_history([types.SimpleNamespace(track_id="B1", requester=me), types.SimpleNamespace(track_id="B2", requester=me)])
+
+    stored = (await db._users_db.find_one({"_id": 7001}))["addedHistory"]
+    assert stored == ["A1", "B1", "B2"]
+    result = await getUserHistory(bot=None, data={"userId": "7001"})
+    assert result["addedHistory"] == ["A1", "B1", "B2"]
+
+
+async def test_the_personal_added_list_is_capped_at_100(db):
+    import types
+    await db._users_db.insert_one({"_id": 7002, "playlist": {}, "history": [], "addedHistory": [], "inbox": []})
+    me = types.SimpleNamespace(id=7002, bot=False)
+
+    await _bare_player()._record_user_added_history([types.SimpleNamespace(track_id=f"S{i}", requester=me) for i in range(130)])
+
+    stored = (await db._users_db.find_one({"_id": 7002}))["addedHistory"]
+    assert len(stored) == 100 and stored[0] == "S30" and stored[-1] == "S129"

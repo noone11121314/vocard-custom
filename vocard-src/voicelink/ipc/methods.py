@@ -804,6 +804,7 @@ async def getGuildHistory(bot: commands.Bot, data: Dict) -> Dict:
         "op": "getGuildHistory",
         "userId": str(user_id),
         "guildId": str(guild.id),
+        "guildName": guild.name,  # Patch 44: labels the server lists on Home
         "botHistory": settings.get("botHistory", []),
         "uploadHistory": settings.get("uploadHistory", []),
     }
@@ -825,6 +826,7 @@ async def getGuildAddedHistory(bot: commands.Bot, data: Dict) -> Dict:
         "op": "getGuildAddedHistory",
         "userId": str(user_id),
         "guildId": str(guild.id),
+        "guildName": guild.name,
         "addedHistory": settings.get("addedHistory", []),
     }
 
@@ -838,10 +840,12 @@ async def getUserHistory(bot: commands.Bot, data: Dict) -> Dict:
     """
     user_id = int(data.get("userId"))
     history = await MongoDBHandler.get_user(user_id, d_type="history")
+    added = await MongoDBHandler.get_user(user_id, d_type="addedHistory")  # Patch 44
     return {
         "op": "getUserHistory",
         "userId": str(user_id),
         "history": history or [],
+        "addedHistory": added or [],
     }
 
 async def getGuildTopTracks(bot: commands.Bot, data: Dict) -> Dict:

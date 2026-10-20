@@ -331,15 +331,33 @@
                     </a>
                 </div>
                 <div class="sections" id="main-page">
-                    <!-- Patch 9: "Recently played" is now built from this server's real,
-                         shared play history (every member's plays, not just this user's own
-                         25-track cap), split into songs that were searched/played normally
-                         ("bot") vs. songs played from a Discord message attachment
-                         ("uploaded"). See getGuildHistory in voicelink/ipc/methods.py and
-                         methods.getGuildHistory in objects.js. -->
+                    <!-- Patch 44: personal lists first - they follow the user across
+                         every server (kept on the user's own record; getUserHistory) -
+                         then this server's lists (getGuildHistory / getGuildAddedHistory),
+                         labelled with the server's name. The personal sections stay
+                         hidden until they have something to show. -->
+                    <div class="section" id="user-added-history-section" style="display: none">
+                        <div class="header">
+                            <div class="sub-title">
+                                <p>{{ _("Every song you've added, in any server") }}</p>
+                                <h2>{{ _("Recently added by you") }}</h2>
+                            </div>
+                        </div>
+                        <div class="card-container" id="user-added-history-tracks"></div>
+                    </div>
+                    <div class="section" id="user-history-section" style="display: none">
+                        <div class="header">
+                            <div class="sub-title">
+                                <p>{{ _("Songs you've played, in any server") }}</p>
+                                <h2>{{ _("Recently played by you") }}</h2>
+                            </div>
+                        </div>
+                        <div class="card-container" id="user-history-tracks"></div>
+                    </div>
                     <div class="section">
                         <div class="header">
                             <div class="sub-title">
+                                <p class="guild-name-label" data-template="{{ _('Played in {0}') }}">{{ _("Played in this server") }}</p>
                                 <h2>{{ _("Recently played") }}</h2>
                             </div>
                         </div>
@@ -378,14 +396,10 @@
                             {% endfor %}
                         </div>
                     </div>
-                    <!-- Patch 17: every track the moment it's queued, regardless of
-                         whether it ever actually plays - a separate, broader list
-                         than "Recently played" above. See getGuildAddedHistory in
-                         methods.py and methods.getGuildAddedHistory in objects.js. -->
                     <div class="section">
                         <div class="header">
                             <div class="sub-title">
-                                <p>{{ _("Every song queued in this server, even ones that got skipped") }}</p>
+                                <p class="guild-name-label" data-template="{{ _('Every song queued in {0}, even ones that got skipped') }}">{{ _("Every song queued in this server, even ones that got skipped") }}</p>
                                 <h2>{{ _("Recently added") }}</h2>
                             </div>
                         </div>
@@ -402,21 +416,6 @@
                             </div>
                             {% endfor %}
                         </div>
-                    </div>
-                    <!-- A separate, personal play log - just this user's own plays,
-                         as opposed to "Recently played" above (every member's plays
-                         in this server). Hidden until populated (it starts empty for
-                         anyone who hasn't played anything yet). See getUserHistory in
-                         voicelink/ipc/methods.py and methods.getUserHistory in
-                         objects.js. -->
-                    <div class="section" id="user-history-section" style="display: none">
-                        <div class="header">
-                            <div class="sub-title">
-                                <p>{{ _("Just the songs you've personally played") }}</p>
-                                <h2>{{ _("Recently played by you") }}</h2>
-                            </div>
-                        </div>
-                        <div class="card-container" id="user-history-tracks"></div>
                     </div>
                     <div class="section">
                         <div class="header">
