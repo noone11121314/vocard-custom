@@ -30,8 +30,9 @@ technical write-up (cause, fix, files, tests) is in
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
-- Play your own songs and playlists from Cantus Flaccus: paste your
-  personal Cantus token once in the dashboard (Settings -> Cantus), then
+- Play your own songs and playlists from Cantus Flaccus: paste the connect
+  code Cantus gives you (server and token in one) once in the dashboard
+  (Settings -> Cantus), then
   `/cantus play` (search as you type) and `/cantus playlist`, or browse
   your songs and playlists in the dashboard's new Cantus tab. Songs show
   their real title, artist and cover, keep working after restarts, and are

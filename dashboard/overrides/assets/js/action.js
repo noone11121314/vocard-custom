@@ -1692,12 +1692,13 @@ $(document).ready(function () {
             // Patch 46: Cantus connect / disconnect. The token field is
             // cleared as soon as it's sent; it's never filled back in.
             if ($target.closest("#cantus-save").length) {
-                // The token is sent once, then cleared (never filled back in).
-                const server = $("#cantus-server").val().trim()
-                const token = $("#cantus-token").val().trim()
-                $("#cantus-token").val("")
+                // Issue #2: one connect code (or a bare token). Sent once, then
+                // cleared - never filled back in.
+                const code = $("#cantus-code").val().trim()
+                const server = $("#cantus-server-row").is(":visible") ? $("#cantus-server").val().trim() : ""
+                $("#cantus-code").val("")
                 $("#cantus-message").removeClass("error").text("Checking…")
-                return player.send({ op: "cantusSave", server, token })
+                return player.send({ op: "cantusSave", code, server })
             }
             if ($target.closest("#cantus-disconnect").length) {
                 $("#cantus-message").removeClass("error").text("Disconnecting…")

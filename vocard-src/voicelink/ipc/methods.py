@@ -852,8 +852,10 @@ async def getUserHistory(bot: commands.Bot, data: Dict) -> Dict:
     }
 
 _CANTUS_MESSAGES = {
-    "token_revoked": "That token isn't valid (or was revoked).",
-    "bad_token": "That doesn't look like a Cantus token.",
+    "token_revoked": "The token was refused (revoked or mistyped).",
+    "bad_token": "That isn't a Cantus connect code or token.",
+    "bad_code": "That isn't a Cantus connect code or token.",
+    "no_default_server": "Paste the whole connect code (there's no default Cantus server set).",
     "not_linked": "You aren't connected to Cantus yet.",
     "bad_url": "That server address isn't valid.",
     "private_address": "That server address isn't allowed (it must be a public address).",
@@ -861,11 +863,13 @@ _CANTUS_MESSAGES = {
 }
 
 
-def _cantus_message(e) -> str:
+def _cantus_message(e, server: str = None) -> str:
     if e.code in _CANTUS_MESSAGES:
         return _CANTUS_MESSAGES[e.code]
     if e.status == 401:
         return _CANTUS_MESSAGES["token_revoked"]
+    if server and (e.status == 0 or e.status in (404, 405) or e.status >= 500):
+        return f"Cantus at {server} didn't answer."
     if e.status in (404, 405) or e.status >= 500:
         return "That server didn't answer like Cantus does - check the address."
     return "Couldn't reach that server - check the address and try again."
@@ -907,31 +911,41 @@ async def cantusStatus(bot: commands.Bot, data: Dict, message: str = None, ok: b
 
 
 async def cantusSave(bot: commands.Bot, data: Dict) -> Dict:
-    """Patch 46: the dashboard's Cantus form - server address + personal
-    token. Members only paste the token (the default server is used);
-    admins can also change the default server, with or without a token."""
+    """Patch 46 / issue #2: the dashboard's Cantus form. `code` is what the
+    person pasted - a connect code (`cantus+https://cfa_…@server`, its own
+    server) or a bare `cfa_` token (the default server). The bot's owner,
+    DJs and server admins can also set the default server (`server`). Pages
+    loaded before issue #2 still send `server` + `token`; that keeps working."""
     from voicelink import cantus
     user_id = int(data.get("userId"))
+    code = str(data.get("code") or "").strip()
     server = str(data.get("server") or "").strip()
     token = str(data.get("token") or "").strip()
     can_set_server = await _is_bot_admin(bot, user_id, data)
-    if not can_set_server and cantus.base_url():
-        server = cantus.base_url()  # members only paste a token
-    if not server:
-        return await cantusStatus(bot, data, "Enter the Cantus server address.", ok=False)
     done = []
     try:
-        if can_set_server and cantus.normalize_server(server) != cantus.base_url():
+        if can_set_server and server and cantus.normalize_server(server) != cantus.base_url():
             await cantus.save_default_server(server)
             done.append("default server saved for everyone")
-        if token:
-            account = await cantus.connect_token(user_id, server, token)
+    except cantus.CantusError as e:
+        return await cantusStatus(bot, data, _cantus_message(e, server), ok=False)
+    target = None
+    try:
+        if code:
+            target = cantus.parse_connect_code(code)[0] or cantus.base_url()
+            account, target = await cantus.connect_code(user_id, code)
+            done.append(f"connected as {account.get('username') or '?'}")
+        elif token:  # an old page: separate server + token fields
+            target = (server if can_set_server and server else cantus.base_url()) or server
+            if not target:
+                return await cantusStatus(bot, data, _CANTUS_MESSAGES["no_default_server"], ok=False)
+            account = await cantus.connect_token(user_id, target, token)
             done.append(f"connected as {account.get('username') or '?'}")
     except cantus.CantusError as e:
-        prefix = "Default server saved, but the token failed: " if done else ""
-        return await cantusStatus(bot, data, prefix + _cantus_message(e), ok=False)
+        prefix = "Default server saved, but connecting failed: " if done else ""
+        return await cantusStatus(bot, data, prefix + _cantus_message(e, target), ok=False)
     if not done:
-        return await cantusStatus(bot, data, "Paste your personal token (cfa_…) first.", ok=False)
+        return await cantusStatus(bot, data, "Paste your Cantus connect code first.", ok=False)
     text = "; ".join(done)
     return await cantusStatus(bot, data, text[0].upper() + text[1:] + ".")
 

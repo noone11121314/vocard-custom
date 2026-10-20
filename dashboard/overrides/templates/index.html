@@ -642,16 +642,19 @@
                             </div>
                         </div>
                         <p class="cantus-state" id="cantus-state">{{ _("Checking…") }}</p>
-                        <!-- One form (cantusSave): server + personal token. Members only paste
-                             their token - the server is the default the bot's owner, DJs or
-                             server admins saved, read-only for everyone else. A saved token
-                             never comes back to the page: its field only shows a masked hint
-                             as placeholder text, so it can't be seen or copied. -->
+                        <!-- One field (cantusSave, issue #2): the connect code Cantus shows next
+                             to a new token, cantus+https://cfa_…@server - server and token in
+                             one copy - or a bare cfa_ token for the default server. The default
+                             server row is only for the bot's owner, DJs and server admins. A
+                             saved token never comes back to the page: the field only shows a
+                             masked hint as placeholder text, so it can't be seen or copied. -->
                         <div class="cantus-fields" id="cantus-form">
-                            <label for="cantus-server">{{ _("Cantus server") }}</label>
-                            <input type="url" id="cantus-server" placeholder="https://your-cantus-server" autocomplete="off" />
-                            <label for="cantus-token">{{ _("Your personal token") }}</label>
-                            <input type="password" id="cantus-token" placeholder="cfa_…" autocomplete="off" />
+                            <label for="cantus-code">{{ _("Cantus connect code") }}</label>
+                            <input type="password" id="cantus-code" placeholder="cantus+https://cfa_…@your-cantus-server" autocomplete="off" />
+                            <div class="cantus-fields" id="cantus-server-row" style="display: none; margin-top: 0">
+                                <label for="cantus-server">{{ _("Default Cantus server (for a bare cfa_ token) - owner, DJs and server admins") }}</label>
+                                <input type="url" id="cantus-server" placeholder="https://your-cantus-server" autocomplete="off" />
+                            </div>
                             <div class="cantus-actions">
                                 <div class="cantus-action primary" id="cantus-save">{{ _("Save") }}</div>
                                 <div class="cantus-action" id="cantus-disconnect" style="display: none">{{ _("Disconnect") }}</div>
@@ -659,7 +662,7 @@
                             <p class="cantus-message" id="cantus-message"></p>
                         </div>
                         <p class="cantus-howto">
-                            {{ _("Make a token in Cantus: Account → Connect other apps → Create token (it starts with cfa_, shown once). Revoking it there cuts Vocard off at once. Your Cantus songs stay yours: others only see them while they're in the queue.") }}
+                            {{ _("In Cantus, create a token under Account → Connect other apps, copy the connect code (it's shown once) and paste it here. Revoking the token there cuts Vocard off at once. Your Cantus songs stay yours: others only see them while they're in the queue.") }}
                         </p>
                     </div>
                     {% include "footer.html" %}

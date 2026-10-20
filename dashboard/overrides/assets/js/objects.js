@@ -478,10 +478,13 @@ const methods = {
         let state;
         if (data.connected) {
             const songs = data.songs != null ? ` (${text(data.songs)} songs)` : "";
-            state = `Connected as <b>${text(data.username || "?")}</b>${songs}`;
+            // (No template string nested in another: the dashboard's minifier
+            // mangles the inner one's whitespace.)
+            const where = data.server ? " on " + text(data.server) : "";
+            state = `Connected as <b>${text(data.username || "?")}</b>${songs}${where}`;
             if (data.problem === "token_revoked") state += "<br>That token isn't valid any more - paste a new one.";
         } else {
-            state = "Not connected - paste your personal token below.";
+            state = "Not connected - paste your Cantus connect code below.";
         }
         $("#cantus-state").html(state);
         $("#cantus-disconnect").toggle(!!data.connected);
@@ -489,18 +492,17 @@ const methods = {
         // Saved secrets only ever arrive as a masked hint, shown as
         // placeholder text: there's nothing in the field to read or copy.
         const masked = (hint) => (hint ? `${hint.slice(0, 4)}••••••••${hint.slice(-4)} (saved - paste a new one to replace)` : "");
-        $("#cantus-token").attr("placeholder", (data.connected && masked(data.tokenHint)) || "cfa_…");
+        $("#cantus-code").attr("placeholder", (data.connected && masked(data.tokenHint)) || "cantus+https://cfa_…@your-cantus-server");
 
-        // Members just paste a token: the server is the default the owner,
-        // DJs or server admins saved, read-only for everyone else.
+        // Issue #2: everyone pastes one connect code; only the owner, DJs and
+        // server admins see the default server (used for a bare cfa_ token).
         const $server = $("#cantus-server");
-        const locked = !data.canSetServer && !!data.defaultServer;
+        $("#cantus-server-row").toggle(!!data.canSetServer);
         // Filled in when the section opens; a reply to Save keeps what was
         // typed (an error must not wipe the address someone just entered).
-        if (!$server.is(":focus") && (data.message === undefined || !$server.val() || locked)) {
-            $server.val((data.connected && data.server) || data.defaultServer || "");
+        if (!$server.is(":focus") && (data.message === undefined || !$server.val())) {
+            $server.val(data.defaultServer || "");
         }
-        $server.prop("readonly", locked);
 
         $("#cantus-message").removeClass("error").text("");
         if (data.message !== undefined) $("#cantus-message").toggleClass("error", data.ok === false).text(data.message);

@@ -15,8 +15,8 @@ from discord.ext import commands
 from voicelink import cantus
 
 STEPS = (
-    "1. In Cantus: **Account -> Connect other apps -> Create token** (name it e.g. \"Vocard\"; it starts with `cfa_` and is shown once).\n"
-    "2. In Vocard's dashboard: **Settings -> Cantus**, paste the token and press **Save**.\n"
+    "In Cantus, create a token under **Account -> Connect other apps**, copy the **connect code** "
+    "(`cantus+https://cfa_…@…`, shown once), and paste it in the dashboard under **Settings -> Cantus**.\n"
     "Then `/cantus play` and `/cantus playlist` use your own library. Your Cantus songs stay yours: "
     "others only see them while they're in the queue. Revoking the token in Cantus cuts Vocard off; "
     "`/cantus unlink` forgets it here."

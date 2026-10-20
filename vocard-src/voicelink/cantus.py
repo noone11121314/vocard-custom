@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 import socket
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -178,8 +179,9 @@ async def check_public_url(url: str) -> None:
 
 
 def normalize_server(raw: str) -> str:
-    """"music.example.com" / "https://music.example.com/x" ->
-    "https://music.example.com". Raises CantusError(400, "bad_url")."""
+    """"music.example.com" -> "https://music.example.com"; keeps a port and a
+    path prefix (a Cantus served under /something), drops a query, fragment
+    and trailing slash. Raises CantusError(400, "bad_url")."""
     raw = (raw or "").strip()
     if not raw:
         raise CantusError(400, "bad_url")
@@ -193,7 +195,38 @@ def normalize_server(raw: str) -> str:
     except ValueError:
         raise CantusError(400, "bad_url")
     host = parts.hostname if ":" not in parts.hostname else f"[{parts.hostname}]"
-    return f"{parts.scheme}://{host}{f':{port}' if port else ''}"
+    path = parts.path.rstrip("/")
+    return f"{parts.scheme}://{host}{f':{port}' if port else ''}{path}"
+
+
+def parse_connect_code(raw: str) -> Tuple[Optional[str], str]:
+    """Issue #2: what a person pastes in Settings -> Cantus. Either the
+    connect code Cantus shows next to a new token -
+    `cantus+https://cfa_<token>@host[:port][/path]` (deliberately not a web
+    link, so it can't end up in browser history) - or a bare `cfa_` token
+    for the default server. Returns (server or None, token). Raises
+    CantusError(400, "bad_code")."""
+    raw = (raw or "").strip()
+    if raw.startswith("cfa_") and not any(c.isspace() or c in "@/:" for c in raw) and len(raw) <= 512:
+        return None, raw
+    match = re.fullmatch(r"cantus\+(https?)://([^@/\s]+)@(\S+)", raw)
+    if not match or not match.group(2).startswith("cfa_") or len(match.group(2)) > 512:
+        raise CantusError(400, "bad_code")
+    try:
+        server = normalize_server(f"{match.group(1)}://{match.group(3)}")
+    except CantusError:
+        raise CantusError(400, "bad_code")
+    return server, match.group(2)
+
+
+async def connect_code(discord_id: int, raw: str) -> Tuple[Dict[str, Any], str]:
+    """Settings -> Cantus "Save": a connect code (its own server) or a bare
+    token (the default server). Returns (account, server)."""
+    server, token = parse_connect_code(raw)
+    server = server or base_url()
+    if not server:
+        raise CantusError(400, "no_default_server")
+    return await connect_token(discord_id, server, token), server
 
 
 def _get_session() -> aiohttp.ClientSession:
@@ -385,6 +418,10 @@ def _full_url(url: str, server: str) -> str:
     """Cantus returns paths; an absolute link must point at the same server."""
     url = str(url)
     if url.startswith("/"):
+        # A Cantus under a path prefix may answer with or without it.
+        parts = urlsplit(server)
+        if parts.path and url.startswith(parts.path + "/"):
+            return f"{parts.scheme}://{parts.netloc}{url}"
         return f"{server}{url}"
     a, b = urlsplit(url), urlsplit(server)
     if (a.scheme, a.hostname, a.port) != (b.scheme, b.hostname, b.port):

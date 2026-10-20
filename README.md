@@ -90,12 +90,13 @@ self-reloading dashboard pages, and no secrets in git or the image.
 ## Cantus Flaccus
 
 Members can play their own songs and playlists from a Cantus Flaccus server
-(`/cantus play`, `/cantus playlist`). Each member connects once in the
-dashboard: **Settings -> Cantus**, paste a personal token (Cantus -> Account
--> Connect other apps -> Create token, starts with `cfa_`) and Save. The
-server address is a default the bot's owner, a DJ or a server admin saves
-there once (or `settings.json` -> `"cantus": {"url": ..., "dashboard_url":
-...}`; only public addresses). `/cantus link` explains the steps,
+(`/cantus play`, `/cantus playlist`). Each member connects once: in Cantus,
+create a token under Account -> Connect other apps, copy the **connect code**
+(`cantus+https://cfa_…@server`, server and token in one), and paste it in the
+dashboard under **Settings -> Cantus**. A bare `cfa_` token also works and
+uses the default server, which the bot's owner, a DJ or a server admin sets
+there (or `settings.json` -> `"cantus": {"url": ..., "dashboard_url": ...}`;
+only public addresses). `/cantus link` explains the steps,
 `/cantus unlink` forgets the token, revoking it in Cantus cuts Vocard off.
 The dashboard's **Cantus** tab lists your songs (searchable) and playlists;
 click a song to queue it, or "Play all" on a playlist.

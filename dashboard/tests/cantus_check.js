@@ -1,22 +1,21 @@
-// Real-Chromium check of Settings -> Cantus (Patch 46), personal tokens
-// only: a member just pastes a token (the server is the default an admin
-// saved, read-only); the owner/DJs/admins can edit the server; there's no
-// app key field; Save sends the token once and clears it; a saved token comes
-// back only as a masked hint in the placeholder - never as a value that can be
-// read or copied; errors show in red; Disconnect works. A fake websocket plays
-// the dashboard server + bot. Run via browser_check.sh.
+// Real-Chromium check of Settings -> Cantus (Patch 46, issue #2): one field
+// for the Cantus connect code (cantus+https://cfa_…@server) or a bare token;
+// Save sends it once and clears it; a saved token comes back only as a
+// masked hint in the placeholder - never as a value that can be read or
+// copied; errors show in red; Disconnect works; only the owner/DJs/admins see
+// the default-server row. A fake websocket plays the dashboard server + bot.
+// Run via browser_check.sh.
 const fs = require("fs");
 const { chromium } = require("playwright");
-const TOKEN = "cfa_supersecrettoken9876";
+const CODE = "cantus+https://cfa_supersecrettoken9876@cantus.example";
 
-async function open(browser, html, isAdmin, appConfigured) {
+async function open(browser, html, isAdmin) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.__errors = [];
   page.on("pageerror", (e) => page.__errors.push(e.message));
-  await page.addInitScript(({ isAdmin, appConfigured }) => {
+  await page.addInitScript(({ isAdmin }) => {
     window.__sent = [];
     let connected = false;
-    let appKey = appConfigured ? "default-saved" : null;
     window.WebSocket = class {
       constructor() {
         this.readyState = 0;
@@ -26,15 +25,13 @@ async function open(browser, html, isAdmin, appConfigured) {
       send(raw) {
         const m = JSON.parse(raw);
         window.__sent.push(m);
-        const status = (extra) => this.push({ op: "cantusStatus", userId: "111", defaultServer: appKey ? "https://cantus.example" : "",
-          ...(connected ? { connected: true, mode: "token", server: "https://cantus.example", username: "babab1t", songs: 272, tokenHint: "cfa_…9876" } : { connected: false }),
-          canSetServer: isAdmin,
+        const status = (extra) => this.push({ op: "cantusStatus", userId: "111", defaultServer: "https://cantus.example", canSetServer: isAdmin,
+          ...(connected ? { connected: true, server: "https://cantus.example", username: "babab1t", songs: 272, tokenHint: "cfa_…9876" } : { connected: false }),
           ...extra });
         if (m.op === "updateSelectedBot") this.push({ op: "initUser", userId: "111", data: { playlist: {}, inbox: [] } });
         if (m.op === "cantusStatus") status({});
         if (m.op === "cantusSave") {
-          if (m.token === "cfa_bad") return status({ ok: false, message: "That token isn't valid (or was revoked)." });
-          if (isAdmin && m.server) appKey = "default-saved";
+          if (m.code === "garbage") return status({ ok: false, message: "That isn't a Cantus connect code or token." });
           connected = true;
           status({ ok: true, message: "Connected as babab1t." });
         }
@@ -43,7 +40,7 @@ async function open(browser, html, isAdmin, appConfigured) {
       close() {}
     };
     window.WebSocket.OPEN = 1; window.WebSocket.CLOSED = 3;
-  }, { isAdmin, appConfigured });
+  }, { isAdmin });
   await page.route("http://localhost:8000/__check", (r) => r.fulfill({ contentType: "text/html", body: html }));
   await page.route(/\/static\/js\/(\w+)\.min\.js/, (r) => {
     const local = `.min/${r.request().url().match(/\/static\/js\/(\w+)\.min\.js/)[1]}.min.js`;
@@ -61,10 +58,10 @@ const ui = (page) => page.evaluate(() => ({
   state: $("#cantus-state").text(),
   message: $("#cantus-message").text(),
   error: $("#cantus-message").hasClass("error"),
+  code: $("#cantus-code").val(),
+  codePlaceholder: $("#cantus-code").attr("placeholder"),
+  serverRow: $("#cantus-server-row").is(":visible"),
   server: $("#cantus-server").val(),
-  serverReadonly: $("#cantus-server").prop("readonly"),
-  tokenValue: $("#cantus-token").val(),
-  tokenPlaceholder: $("#cantus-token").attr("placeholder"),
   disconnect: $("#cantus-disconnect").is(":visible"),
 }));
 
@@ -74,26 +71,25 @@ const ui = (page) => page.evaluate(() => ({
   let failures = 0;
   const report = (ok, text) => { if (!ok) failures++; console.log(`${ok ? "PASS" : "FAIL"}  Cantus - ${text}`); };
 
-  // A member, after an admin set things up.
-  let page = await open(browser, html, false, true);
+  let page = await open(browser, html, false);
   let st = await ui(page);
-  report(st.visible && (await page.locator("#cantus-app-key").count()) === 0, "a member sees just the token field");
-  report(st.server === "https://cantus.example" && st.serverReadonly, `a member's server is the admins' one, read-only (${st.server})`);
-  report(st.state.includes("Not connected"), `not connected at first ("${st.state}")`);
-  await page.fill("#cantus-token", "cfa_bad");
+  report(st.visible && !st.serverRow && (await page.locator("#cantus-token, #cantus-app-key").count()) === 0, "a member sees one field: the connect code");
+  report(st.codePlaceholder.startsWith("cantus+https://cfa_"), `placeholder shows the code's shape ("${st.codePlaceholder}")`);
+  report(st.state.includes("Not connected") && st.state.includes("connect code"), `not connected at first ("${st.state}")`);
+  await page.fill("#cantus-code", "garbage");
   await page.click("#cantus-save");
   await page.waitForTimeout(300);
   st = await ui(page);
-  report(st.error && st.message.includes("isn't valid"), `a bad token shows an error ("${st.message}")`);
-  await page.fill("#cantus-token", TOKEN);
+  report(st.error && st.message.includes("isn't a Cantus connect code"), `garbage gets a plain error ("${st.message}")`);
+  await page.fill("#cantus-code", CODE);
   await page.click("#cantus-save");
   await page.waitForTimeout(300);
-  let sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "cantusSave").pop());
+  const sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "cantusSave").pop());
   st = await ui(page);
-  report(sent.token === TOKEN && !sent.appKey, "a member's Save sends just the token");
-  report(st.tokenValue === "" && st.tokenPlaceholder.startsWith("cfa_••••") && st.tokenPlaceholder.includes("9876"), `saved token shown masked, as a placeholder only ("${st.tokenPlaceholder}")`);
-  report(st.state.includes("babab1t") && st.state.includes("272") && !st.error, `connected ("${st.state}")`);
-  report(!(await page.content()).includes(TOKEN), "the token appears nowhere on the page");
+  report(sent.code === CODE && !sent.server && !("token" in sent), "Save sends just the code");
+  report(st.code === "" && st.codePlaceholder.startsWith("cfa_••••") && st.codePlaceholder.includes("9876"), `the field is cleared; saved token shown masked only ("${st.codePlaceholder}")`);
+  report(st.state.includes("babab1t") && st.state.includes("272") && st.state.includes("cantus.example") && !st.error, `connected ("${st.state}")`);
+  report(!(await page.content()).includes("supersecrettoken"), "the token appears nowhere on the page");
   await page.click("#cantus-disconnect");
   await page.waitForTimeout(300);
   st = await ui(page);
@@ -101,19 +97,14 @@ const ui = (page) => page.evaluate(() => ({
   report(page.__errors.length === 0, `member: no page errors${page.__errors.length ? ": " + page.__errors.join(" | ") : ""}`);
   await page.close();
 
-  // The bot's owner / a DJ / a server admin: the server is editable (it's
-  // the default for everyone), and there is no app key field at all.
-  page = await open(browser, html, true, false);
+  page = await open(browser, html, true);
   st = await ui(page);
-  report(!st.serverReadonly && (await page.locator("#cantus-app-key").count()) === 0, "an admin can edit the server; there's no app key field");
-  await page.fill("#cantus-server", "https://cantus.example");
-  await page.fill("#cantus-token", TOKEN);
+  report(st.serverRow && st.server === "https://cantus.example", `an admin also sees the default server (${st.server})`);
+  await page.fill("#cantus-code", CODE);
   await page.click("#cantus-save");
   await page.waitForTimeout(300);
-  sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "cantusSave").pop());
-  st = await ui(page);
-  report(sent.server === "https://cantus.example" && sent.token === TOKEN && !("appKey" in sent), "Save sends the server and token only");
-  report(st.tokenValue === "" && !(await page.content()).includes(TOKEN), "the token is cleared and appears nowhere on the page");
+  const adminSent = await page.evaluate(() => window.__sent.filter((m) => m.op === "cantusSave").pop());
+  report(adminSent.code === CODE && adminSent.server === "https://cantus.example", "an admin's Save sends the code and the default server");
   report(page.__errors.length === 0, `admin: no page errors${page.__errors.length ? ": " + page.__errors.join(" | ") : ""}`);
   await browser.close();
   process.exit(failures ? 1 : 0);

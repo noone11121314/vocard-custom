@@ -150,7 +150,7 @@ def make_yt(requester_id, video="yt1"):
 # --- connecting: server + personal token only ---------------------------------
 
 async def test_connecting_checks_the_token_and_stores_it(fake, allow_localhost):
-    account = await cantus.connect_token(OWNER, fake.server + "/some/page", f"  {GOOD_TOKEN} ")
+    account = await cantus.connect_token(OWNER, fake.server + "/", f"  {GOOD_TOKEN} ")
     assert account["username"] == "babab1t"
     assert fake.stored[OWNER]["server"] == fake.server and fake.stored[OWNER]["token"] == GOOD_TOKEN
     assert fake.calls[-1][3:] == (f"Bearer {GOOD_TOKEN}", None)  # the token alone - no app key, no Discord header
@@ -193,7 +193,7 @@ async def test_disconnect_forgets_the_token(fake, allow_localhost):
 async def test_an_admin_saved_default_server_survives_a_restart(fake, allow_localhost):
     Config({"client_id": 1})
     assert cantus.base_url() == ""
-    await cantus.save_default_server(fake.server + "/x")
+    await cantus.save_default_server(fake.server + "/?from=settings")
     assert cantus.base_url() == fake.server
     cantus._default_server.clear()  # restart
     await cantus.load_default_server()
@@ -217,7 +217,7 @@ async def test_cantus_link_explains_the_token_steps(fake):
     await Cantus.link.callback(Cantus(MagicMock()), i)
     text, kwargs = i.response.send_message.await_args.args[0], i.response.send_message.await_args.kwargs
     assert kwargs.get("ephemeral") is True
-    assert "Create token" in text and "Settings -> Cantus" in text and "https://dash.example" in text
+    assert "connect code" in text and "Connect other apps" in text and "Settings -> Cantus" in text and "https://dash.example" in text
     assert fake.calls == []  # no pairing request anywhere
 
 
@@ -439,7 +439,8 @@ def test_malformed_server_addresses_are_refused(raw):
 
 
 def test_server_addresses_are_normalized():
-    assert cantus.normalize_server("music.example.com/some/page?x=1") == "https://music.example.com"
+    assert cantus.normalize_server("music.example.com/?x=1#y") == "https://music.example.com"
+    assert cantus.normalize_server("https://example.com/cantus-prefix/") == "https://example.com/cantus-prefix"  # issue #2: path prefix kept
     assert cantus.normalize_server("http://music.example.com:8080/") == "http://music.example.com:8080"
 
 
@@ -525,7 +526,7 @@ async def test_nothing_typed_is_reported(fake, monkeypatch):
     from voicelink.ipc.methods import cantusSave
     _dj(monkeypatch, False)
     reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "server": ""})
-    assert reply["ok"] is False and "token" in reply["message"]
+    assert reply["ok"] is False and "connect code" in reply["message"]
 
 
 async def test_the_dashboard_explains_a_refused_server(fake, monkeypatch):
@@ -589,3 +590,106 @@ async def test_the_tab_only_ever_shows_your_own_library(fake, allow_localhost):
     mine = await cantusSongs(MagicMock(), {"userId": str(OWNER)})
     theirs = await cantusSongs(MagicMock(), {"userId": str(FRIEND)})
     assert [s["title"] for s in mine["songs"]] == ["Song One"] and theirs["songs"] == []
+
+
+
+# --- issue #2: one connect code ------------------------------------------------------
+
+@pytest.mark.parametrize("raw, server, token", [
+    ("cantus+https://cfa_abc123@music.bababm.win", "https://music.bababm.win", "cfa_abc123"),
+    ("  cantus+http://cfa_abc123@195.85.19.166:6080  ", "http://195.85.19.166:6080", "cfa_abc123"),
+    ("cantus+https://cfa_abc123@example.com/cantus-prefix/", "https://example.com/cantus-prefix", "cfa_abc123"),
+    ("cfa_abc123", None, "cfa_abc123"),
+])
+def test_connect_codes_and_bare_tokens_are_parsed(raw, server, token):
+    assert cantus.parse_connect_code(raw) == (server, token)
+
+
+@pytest.mark.parametrize("raw", [
+    "", "hello", "https://music.bababm.win", "cantus+https://music.bababm.win",
+    "cantus+https://abc123@music.bababm.win",  # a token without cfa_
+    "cantus+ftp://cfa_x@music.bababm.win", "cantus+https://cfa_x@", "cfa_with space", "cfa_x@host",
+])
+def test_anything_else_is_not_a_connect_code(raw):
+    with pytest.raises(cantus.CantusError) as e:
+        cantus.parse_connect_code(raw)
+    assert e.value.code == "bad_code"
+
+
+async def test_a_connect_code_stores_its_own_server_per_person(fake, allow_localhost, monkeypatch):
+    """The code can point at a different Cantus than the default; each
+    person keeps their own server."""
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    Config({"client_id": 1, "cantus": {"url": "https://default.example"}})
+    code = fake.server.replace("http://", f"cantus+http://{GOOD_TOKEN}@")
+    reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "code": code})
+    assert reply["ok"] and reply["connected"] and reply["server"] == fake.server
+    assert fake.stored[OWNER]["server"] == fake.server and fake.stored[OWNER]["token"] == GOOD_TOKEN
+    assert GOOD_TOKEN not in repr(reply) and code not in repr(reply)
+    assert [s["id"] for s in (await cantus.search_songs(OWNER))["songs"]] == ["s1"]  # their own server is used
+
+
+async def test_a_bare_token_still_uses_the_default_server(fake, allow_localhost, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "code": GOOD_TOKEN})
+    assert reply["ok"] and fake.stored[OWNER]["server"] == fake.server
+
+
+async def test_a_bare_token_without_a_default_server_asks_for_the_whole_code(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    Config({"client_id": 1})
+    reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "code": GOOD_TOKEN})
+    assert reply["ok"] is False and "whole connect code" in reply["message"] and fake.calls == []
+
+
+@pytest.mark.parametrize("code, wanted", [
+    ("not a code", "isn't a Cantus connect code or token"),
+    ("cantus+https://cfa_wrong@{host}", "refused (revoked or mistyped)"),
+])
+async def test_connect_code_errors_in_plain_words(fake, allow_localhost, monkeypatch, code, wanted):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    code = code.replace("https://", "http://").replace("{host}", fake.server.split("://")[1])
+    reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "code": code})
+    assert reply["ok"] is False and wanted in reply["message"] and OWNER not in fake.stored
+
+
+async def test_an_unreachable_cantus_is_named(fake, monkeypatch):
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    monkeypatch.setattr("voicelink.cantus.check_public_url", AsyncMock())
+    reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "code": f"cantus+http://{GOOD_TOKEN}@127.0.0.1:9"})
+    assert reply["ok"] is False and reply["message"] == "Cantus at http://127.0.0.1:9 didn't answer."
+
+
+async def test_people_connected_before_issue_2_keep_working(fake, allow_localhost):
+    """Migration: a connection saved with the old two-field form - exactly
+    what's stored on the live bot (server, token, username, connected_at) -
+    plays, searches and shows as connected with no change."""
+    fake.stored[OWNER] = {"_id": OWNER, "server": fake.server, "token": GOOD_TOKEN, "username": "babab1t", "connected_at": 1760900000.0}
+    state = await cantus.status(OWNER)
+    assert state["connected"] and state["username"] == "babab1t" and state["tokenHint"] == "cfa_…1234"
+    assert (await cantus.resolve_for_play(player_in(), owners_track(fake)))[0] == "LAVALINK_ENCODED"
+
+
+async def test_a_page_loaded_before_issue_2_can_still_save(fake, allow_localhost, monkeypatch):
+    """An open dashboard tab with the old JS still sends server + token."""
+    from voicelink.ipc.methods import cantusSave
+    _dj(monkeypatch, False)
+    reply = await cantusSave(_bot(set()), {"userId": str(OWNER), "server": fake.server, "token": GOOD_TOKEN})
+    assert reply["ok"] and fake.stored[OWNER]["token"] == GOOD_TOKEN
+
+
+def test_a_play_link_under_a_path_prefix():
+    server = "https://example.com/cantus-prefix"
+    assert cantus._full_url("/cantus-prefix/cantus/api/v1/play/s1?s=x", server) == "https://example.com/cantus-prefix/cantus/api/v1/play/s1?s=x"
+    assert cantus._full_url("/cantus/api/v1/play/s1?s=x", server) == "https://example.com/cantus-prefix/cantus/api/v1/play/s1?s=x"
+
+
+def test_a_connect_code_is_never_logged():
+    from voicelink.ipc.client import _redact
+    assert "cfa_secret" not in _redact({"op": "cantusSave", "code": "cantus+https://cfa_secret@x.example"})
+    assert "cfa_secret" not in _redact("pasted cantus+https://cfa_secret@x.example by mistake")

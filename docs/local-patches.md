@@ -2545,6 +2545,25 @@ page: its field stays empty with a masked placeholder (`cfa_••••••�
 Disconnect / `/cantus unlink` forgets it; revoking it on Cantus cuts Vocard
 off and the next song from that library is skipped with "reconnect" note.
 
+**One connect code** (issue #2, owner: "generate an url along with the token
+so the user only needs to copy one thing"): Cantus now shows, next to a new
+token, a connect code `cantus+https://cfa_<token>@host[:port][/path]` -
+deliberately not a web link, so a mistaken paste into a browser opens
+nothing. Settings -> Cantus has one field, "Cantus connect code";
+`parse_connect_code()` splits it into server (`<scheme>://<host>[:port][/path]`)
+and token (must start `cfa_`), and the server is stored **per person** with the
+token - a code may point at a different Cantus than the default. A bare
+`cfa_` token still works and uses the default server (the owner/DJ/admin row,
+shown only to them). Server addresses now keep a path prefix
+(`normalize_server`), and a play link under one is resolved either way
+(`_full_url`). Errors in plain words: "That isn't a Cantus connect code or
+token", "Cantus at <server> didn't answer", "The token was refused (revoked
+or mistyped)". **Migration:** nothing to convert - the two people connected
+on the live bot before this (stored `{server, token, username,
+connected_at}`) are exactly what a connect code stores, so they keep working
+untouched (tested with that record), and a dashboard tab still open with the
+old two-field page can still save (`cantusSave` accepts `server` + `token`).
+
 **Commands** (`cogs/cantus.py`, slash only, replies ephemeral):
 `/cantus play <song>` (autocomplete from `GET /songs?q=`), `/cantus
 playlist <name>` (autocomplete from `GET /playlists`, queues a snapshot of
@@ -2636,7 +2655,7 @@ differs from `update.__version__`; the first deploy blanked `version` once
 including the "denied" state) and the bot-wide app key (`cfk_…`, settings and
 dashboard field) - built, deployed and then dropped by the owner's decision.
 
-Tests: `tests/unit/test_patch46_cantus.py` (55): connect checks and stores
+Tests: `tests/unit/test_patch46_cantus.py` (78): connect checks and stores
 the token, the token on every call (no app key, no Discord header), bad
 token not stored, not connected -> no call, status never contains the token,
 disconnect, the default server survives a restart, `/cantus link` replies
@@ -2653,10 +2672,17 @@ normalization, foreign play links, the resolver; loudness; `Player.play()`;
 the dashboard form (member pastes only a token, admin sets the default
 server, nothing typed, refused server); log redaction; the Cantus tab (songs
 with queueable ids and no play link, paging, playlists and a playlist's
-songs, not connected, two people each see only their own library). Real MongoDB:
+songs, not connected, two people each see only their own library); issue #2:
+connect codes (https, http with port, a path prefix, bare token) and 9 kinds
+of garbage, a code's own server stored per person, a bare token uses the
+default, no default -> "paste the whole code", plain-word errors, an
+unreachable Cantus named, a pre-issue-2 connection keeps working, an old page
+can still save, play links under a path prefix, codes never logged. Real MongoDB:
 connections and gains stored apart from the user record.
-`dashboard/tests/cantus_check.js` (14 Chromium checks: member form, masked
-token, admin edits the server, no app key field anywhere) and
+`dashboard/tests/cantus_check.js` (14 Chromium checks: one connect-code
+field, plain error, Save sends just the code and clears it, masked token,
+connected state with the server, Disconnect, admins also see the default
+server) and
 `cantus_queue_check.js` (7: History hides other people's Cantus songs, queued
 ones still show with queue controls, no copy link / re-queue / save on them,
 your own keeps re-queue but not Copy link) and `cantus_tab_check.js` (16:
