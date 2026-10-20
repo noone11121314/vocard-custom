@@ -2611,8 +2611,12 @@ shaped `cfa_…` are masked elsewhere); the measurement logs `cantus:<key>`,
 not the URL; replies to the dashboard never contain the token. Lavalink's
 own request log does contain the play link it was handed (one song, 12h).
 
-**Status:** built and tested against a fake Cantus; not deployed (branch
-`feat/cantus`) until it's been tried against the real server.
+**Status:** deployed 20 Oct (staging + production, dashboard restarted).
+New slash commands only reach Discord when the bot syncs its command tree,
+which `main.py` does only when `settings.json` -> `version` differs from
+`update.__version__`; the deploy blanked `version` once so `/cantus` got
+registered (the bot writes it back). Not yet tried end to end against the
+real Cantus.
 
 Tests: `tests/unit/test_patch46_cantus.py` (42): headers for both modes,
 409 not-linked, unconfigured pairing makes no calls, search limit/offset,
