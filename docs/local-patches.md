@@ -2443,6 +2443,84 @@ label, newest-first with repeats, personal-only, no-history page).
 
 ---
 
+## Patch 45 — Full history: every song played or added, including the old ones
+
+User: "fetch my old full history and put it on full history".
+
+**Why there was no full history:** every stored list was capped (personal
+played 25, server played 60 / added 100, personal added 100 since Patch 44)
+and the play counters only keep counts. Nothing kept every event.
+
+**New store:** Mongo collection `HistoryEvents` (created with its indexes in
+`MongoDBHandler.init`): one document per event, `{kind: "played"|"added",
+guild_id, user_id (None for the bot's own songs, e.g. autoplay), track_id,
+video_id, at (UTC), source: "live"|"import"}`. Unique on (guild_id,
+video_id, kind, at), so re-running the import never doubles anything.
+`MongoDBHandler.add_history_events()` (best-effort, skips duplicates) and
+`get_history_events(query, before, limit≤200)` (newest first), and
+`get_history_songs(query, skip, limit)`: an aggregation giving **one entry
+per song** (grouped by `video_id`) with its latest event and how many times
+it was played / added, newest first.
+
+**Live recording** (`Player._record_history_events`): a "played" event in
+`do_next` next to the existing guild history write, an "added" event per
+song in `add_track`. Errors are logged at debug and never touch playback.
+Carrying on with the same song after a restart (`_resume_start_ms`) is not
+recorded as a new play.
+
+**Dashboard IPC** `getFullHistory {scope, offset}` (`ipc/methods.py`,
+2 credits): `scope: "user"` is everything you played or added in any
+server, all time; `scope: "guild"` is every song played in your server
+(`_resolve_guild_for_user`), by anyone. Each song appears **once** (user
+asked: no duplicates), at the last time it was played/added, with `plays` /
+`adds` counts. 100 songs per page; paging is by `offset`, not by time,
+because songs added together (a playlist) share one timestamp and a time
+cut-off dropped some of them (caught by a real-Mongo test). Entries carry
+`trackId`, `kind`, ISO `at`, `guildName`, `plays`, `adds`.
+
+**Dashboard page:** new menu entry **Full history** (`menu.html` is now an
+override, mounted in `docker-compose.yml`), `#full-history-page` in
+`index.html`: tabs **You** / **This server**, one row per song grouped by
+the day it was last played, with a "Played N×" (or "Added") badge, time and
+(on "You") the server, **Load more** at the bottom. Clicking a song adds it to the end of the queue; the ⋯ icon opens
+the History menu (`HISTORY_MENU`). `objects.js`: `openFullHistory`,
+`requestFullHistory`, `buildFullHistoryRowHtml`, `methods.getFullHistory`
+(ignores late replies for a tab you've left); `action.js` click handling.
+
+**Importing the old history** (`scripts/backfill_history.py`, run once,
+`--dry-run` to preview, `--until <ISO time>` = when the live recording
+started so the two never overlap):
+- Plays come from Lavalink's logs (kept back to 24 Sep): each `PATCH
+  .../players/<guild>` carrying a new `encodedTrack` is a song starting
+  (position > 0 is a seek/resume and is skipped). Cached songs are named in
+  the URI (`/stream/<videoId>`); streamed googlevideo URLs are matched by
+  `clen` = the exact size of the file now in `stream_cache/`, or by the bot
+  log's "loading" line within 30s.
+- Adds come from the bot's log (`addTracks` IPC messages; kept since 18 Oct).
+- A play is credited to whoever added that song in that server most recently
+  (within 6h) before it played, then to each user's 25 stored personal plays.
+- Song details come from stored history/top lists, else one gentle Lavalink
+  `loadtracks` per missing video.
+
+**Limits (told to the user):** the server's history is complete back to
+24 Sep except streamed songs that can't be identified (no cache file and no
+bot log); personal history before 18 Oct is only partial, because older
+plays don't say who asked for them. Imported for everybody (all users,
+all servers) on 20 Oct: 573 plays from Lavalink logs (24 Sep – 20 Oct) +
+103 adds from bot logs; 136 streamed plays could not be identified. 464
+plays have no known requester (they only show under "This server").
+Personally credited: the user 155 events / 64 songs (since 5 Oct), two
+other members 38/20 and 22/10. Servers: 387 plays / 189 songs and 189 / 127.
+
+Tests: new `tests/unit/test_patch45_full_history.py` (5); 4 real-MongoDB
+tests (paging 130 songs newest first per user/server; a song played three
+times in two servers is one row with its counts; a 150-song playlist added
+at once pages without losing any; duplicate import skipped);
+`dashboard/tests/full_history_check.js` (real Chromium: menu, one row per
+song with play count, grouping, Load more, tabs, click to add).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

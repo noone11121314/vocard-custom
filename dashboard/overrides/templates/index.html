@@ -481,6 +481,40 @@
                     </div>
                     {% include "footer.html" %}
                 </div>
+                <div class="sections" id="full-history-page">
+                    <!-- Patch 45: the uncapped history (HistoryEvents in Mongo, see
+                         getFullHistory in methods.py), 100 at a time, grouped by day.
+                         "You": everything you played or added, in any server.
+                         "This server": every song played here, by anyone. -->
+                    <style>
+                        #full-history-page .fh-tabs { display: flex; gap: 8px; margin-top: 12px; }
+                        #full-history-page .fh-tab { padding: 6px 14px; border-radius: 999px; cursor: pointer; background: rgba(255,255,255,0.08); }
+                        #full-history-page .fh-tab.active { background: var(--primary, #1db954); color: #000; }
+                        #full-history-page .fh-day { margin: 18px 0 6px; opacity: 0.7; font-size: 0.9em; }
+                        #full-history-page .fh-badge { font-size: 0.75em; padding: 1px 8px; border-radius: 999px; margin-right: 8px; white-space: nowrap; background: rgba(255,255,255,0.1); }
+                        #full-history-page .fh-badge.added { background: rgba(80,160,255,0.25); }
+                        #full-history-page .fh-meta { opacity: 0.6; font-size: 0.85em; white-space: nowrap; }
+                        #full-history-page .fh-more { display: none; margin: 16px auto; width: fit-content; padding: 8px 18px; border-radius: 999px; cursor: pointer; background: rgba(255,255,255,0.08); }
+                        #full-history-page .fh-empty { display: none; opacity: 0.7; margin-top: 16px; }
+                    </style>
+                    <div class="section">
+                        <div class="header">
+                            <div class="sub-title">
+                                <p>{{ _("Every song, once each, by the last time it was played or added. Click a song to add it to the queue.") }}</p>
+                                <h2>{{ _("Full history") }}</h2>
+                            </div>
+                        </div>
+                        <div class="fh-tabs">
+                            <div class="fh-tab active" data-scope="user">{{ _("You") }}</div>
+                            <div class="fh-tab" data-scope="guild">{{ _("This server") }}</div>
+                        </div>
+                        <div class="track-rows" id="full-history-list"></div>
+                        <p class="fh-empty" id="full-history-empty">{{ _("Nothing here yet.") }}</p>
+                        <div class="center" id="full-history-loader" style="display: none"><div class="loader"></div></div>
+                        <div class="fh-more" id="full-history-load-more">{{ _("Load more") }}</div>
+                    </div>
+                    {% include "footer.html" %}
+                </div>
                 <div class="sections" id="user-settings-page">
                     <div class="section">
                         <div class="header">

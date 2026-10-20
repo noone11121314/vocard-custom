@@ -1044,6 +1044,10 @@ $(document).ready(function () {
                     return buildExplorePage()
                 }
 
+                if (pageName == "full-history-page") {
+                    return openFullHistory(player, player.fullHistory?.scope || "user")
+                }
+
                 if (pageName == "create-playlist") {
                     if (player.selectedBot == undefined) {
                         return player.tm.showToast("error", localeTexts.errors.noPlayerError)
@@ -1183,6 +1187,20 @@ $(document).ready(function () {
                     $(".main-container").append(buildPlaylistHtml(cardId, selectedPlaylistPayload, selectedPlaylistPayload.type))
                     changePage(pageId, true)
                 }
+            }
+            return
+        }
+
+        // Patch 45: Full history - tabs, "Load more", click a song to add it.
+        if ($target.closest("#full-history-page").length) {
+            const $tab = $target.closest(".fh-tab")
+            if ($tab.length) return openFullHistory(player, $tab.data("scope"))
+            if ($target.closest("#full-history-load-more").length) return requestFullHistory(player, true)
+            const $track = $target.closest(".track-row")
+            if ($track.length) {
+                const options = { selectedTrackId: $track.data("id") }
+                if ($target.is("span.material-symbols-outlined")) return buildContextMenu(e, HISTORY_MENU, options)
+                return player.send({ op: "addTracks", tracks: [options.selectedTrackId], type: "addToQueue" })
             }
             return
         }

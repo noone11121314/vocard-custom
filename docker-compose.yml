@@ -82,6 +82,7 @@ services:
         - ./dashboard/overrides/templates/controller.html:/app/templates/controller.html
         - ./dashboard/overrides/templates/queue.html:/app/templates/queue.html
         - ./dashboard/overrides/templates/index.html:/app/templates/index.html
+        - ./dashboard/overrides/templates/menu.html:/app/templates/menu.html
     vocard-db:
         command:
         - mongod

@@ -36,7 +36,7 @@ GUILD = 555000111
 
 @pytest.fixture
 async def db(monkeypatch):
-    for attr in ("_client", "_db", "_settings_db", "_users_db"):
+    for attr in ("_client", "_db", "_settings_db", "_users_db", "_history_db"):
         monkeypatch.setattr(MongoDBHandler, attr, None)
     monkeypatch.setattr(MongoDBHandler, "_lock", asyncio.Lock())
     monkeypatch.setattr(MongoDBHandler, "_settings_buffer", {})
@@ -191,3 +191,80 @@ async def test_the_personal_added_list_is_capped_at_100(db):
 
     stored = (await db._users_db.find_one({"_id": 7002}))["addedHistory"]
     assert len(stored) == 100 and stored[0] == "S30" and stored[-1] == "S129"
+
+
+async def test_full_history_is_paged_newest_first_per_user_and_per_server(db, monkeypatch):
+    """Patch 45: HistoryEvents - every play/add kept (no cap), read back 100
+    at a time, newest first, for "You" (any server) and "This server"."""
+    import datetime as _dt
+    import types
+    from voicelink.ipc.methods import getFullHistory
+    me = types.SimpleNamespace(id=7003, bot=False)
+    other = types.SimpleNamespace(id=7004, bot=False)
+    player = _bare_player()
+    for i in range(130):
+        t = types.SimpleNamespace(track_id=f"T{i}", requester=me if i % 2 else other, source="youtube", identifier=f"v{i}", uri=None)
+        await player._record_history_events("played", [t])
+        await asyncio.sleep(0.003)  # distinct milliseconds, as real plays are
+    await player._record_history_events("added", [types.SimpleNamespace(track_id="ADD", requester=me, source="youtube", identifier="vadd", uri=None)])
+    assert await db._history_db.count_documents({}) == 131
+
+    guild = types.SimpleNamespace(id=GUILD, name="Test Guild")
+    bot = MagicMock(get_guild=MagicMock(return_value=guild))
+    monkeypatch.setattr("voicelink.ipc.methods._resolve_guild_for_user", lambda bot, uid, data: guild)
+
+    page1 = await getFullHistory(bot, {"userId": "7003", "scope": "guild"})
+    assert len(page1["events"]) == 100 and not page1["done"] and page1["guildName"] == "Test Guild"
+    assert page1["events"][0]["trackId"] == "T129"  # newest first; "added" isn't in the server view
+    page2 = await getFullHistory(bot, {"userId": "7003", "scope": "guild", "offset": page1["offset"]})
+    assert len(page2["events"]) == 30 and page2["done"] and page2["append"]
+    assert {e["trackId"] for e in page1["events"] + page2["events"]} == {f"T{i}" for i in range(130)}
+
+    mine = await getFullHistory(bot, {"userId": "7003", "scope": "user"})
+    assert mine["events"][0] == {"trackId": "ADD", "kind": "added", "at": mine["events"][0]["at"], "guildName": "Test Guild", "plays": 0, "adds": 1}
+    assert len(mine["events"]) == 66 and mine["done"]  # 65 plays + 1 add, only mine
+    assert _dt.datetime.fromisoformat(mine["events"][0]["at"]).tzinfo is not None
+
+
+async def test_a_duplicate_import_event_is_skipped_not_fatal(db):
+    import datetime as _dt
+    at = _dt.datetime(2026, 10, 1, 12, 0, tzinfo=_dt.timezone.utc)
+    e = {"kind": "played", "guild_id": GUILD, "user_id": None, "track_id": "X", "video_id": "vx", "at": at, "source": "import"}
+    await db.add_history_events([e])
+    await db.add_history_events([e, dict(e, video_id="vy", track_id="Y")])
+    assert await db._history_db.count_documents({}) == 2
+
+
+async def test_full_history_lists_each_song_once_at_its_latest_time(db, monkeypatch):
+    """A song played three times (in two servers) and added once is one row:
+    at its latest time, with the counts - not four rows."""
+    import types
+    from voicelink.ipc.methods import getFullHistory
+    me = types.SimpleNamespace(id=7005, bot=False)
+    song = lambda tid, vid: types.SimpleNamespace(track_id=tid, requester=me, source="youtube", identifier=vid, uri=None)
+    a, b = _bare_player(), _bare_player()
+    b._guild = MagicMock(id=GUILD + 1)
+    for p, kind, t in [(a, "added", song("S", "vs")), (a, "played", song("S", "vs")), (a, "played", song("O", "vo")), (b, "played", song("S2", "vs")), (b, "played", song("S2", "vs"))]:
+        await p._record_history_events(kind, [t])
+        await asyncio.sleep(0.003)
+    monkeypatch.setattr("voicelink.ipc.methods._resolve_guild_for_user", lambda bot, uid, data: None)
+    bot = MagicMock()
+    bot.get_guild.side_effect = lambda gid: types.SimpleNamespace(name=f"G{gid}")
+
+    mine = await getFullHistory(bot, {"userId": "7005", "scope": "user"})
+
+    rows = [(e["trackId"], e["plays"], e["adds"], e["guildName"]) for e in mine["events"]]
+    assert rows == [("S2", 3, 1, f"G{GUILD + 1}"), ("O", 1, 0, f"G{GUILD}")]
+
+
+async def test_paging_never_drops_songs_added_at_the_same_moment(db, monkeypatch):
+    """A 150-song playlist added at once: all share one timestamp, and both
+    pages together still list every song exactly once."""
+    import types
+    from voicelink.ipc.methods import getFullHistory
+    me = types.SimpleNamespace(id=7006, bot=False)
+    await _bare_player()._record_history_events("added", [types.SimpleNamespace(track_id=f"P{i}", requester=me, source="youtube", identifier=f"p{i}", uri=None) for i in range(150)])
+    p1 = await getFullHistory(MagicMock(), {"userId": "7006", "scope": "user"})
+    p2 = await getFullHistory(MagicMock(), {"userId": "7006", "scope": "user", "offset": p1["offset"]})
+    ids = [e["trackId"] for e in p1["events"] + p2["events"]]
+    assert len(ids) == 150 and len(set(ids)) == 150 and p2["done"]

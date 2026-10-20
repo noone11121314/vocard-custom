@@ -66,6 +66,8 @@ class MongoDBHandler:
     _db: Optional[Any] = None
     _settings_db: Optional[AsyncIOMotorCollection] = None
     _users_db: Optional[AsyncIOMotorCollection] = None
+    # Patch 45: full play/add history - one document per event, never capped.
+    _history_db: Optional[AsyncIOMotorCollection] = None
     _lock: asyncio.Lock = asyncio.Lock()
 
     # Cache with TTL (Time To Live in seconds)
@@ -133,6 +135,10 @@ class MongoDBHandler:
                 cls._db = cls._client[db_name]
                 cls._settings_db = cls._db["Settings"]
                 cls._users_db = cls._db["Users"]
+                cls._history_db = cls._db["HistoryEvents"]
+                await cls._history_db.create_index([("user_id", -1), ("at", -1)])
+                await cls._history_db.create_index([("guild_id", -1), ("at", -1)])
+                await cls._history_db.create_index([("guild_id", 1), ("video_id", 1), ("kind", 1), ("at", 1)], unique=True)
 
                 logger.info("MongoDB databases initialized: %s", db_name)
 
@@ -298,6 +304,53 @@ class MongoDBHandler:
     # dashboard change - e.g. setting a DJ role - was ignored by an already
     # running player until the bot restarted. Registered by pool.py.
     _settings_listeners: List = []
+
+    @classmethod
+    async def add_history_events(cls, events: List[Dict[str, Any]]) -> None:
+        """Patch 45: record play/add events ({kind, guild_id, user_id,
+        track_id, video_id, at}) for the full history. Best-effort: a
+        duplicate (same server, song, kind and time) is silently skipped."""
+        if cls._history_db is None or not events:
+            return
+        try:
+            await cls._history_db.insert_many([dict(e) for e in events], ordered=False)
+        except Exception:
+            pass  # duplicates in an import, or the DB briefly unavailable
+
+    @classmethod
+    async def get_history_events(cls, query: Dict[str, Any], before=None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Newest first; `before` (a datetime) pages back in time."""
+        if cls._history_db is None:
+            return []
+        q = dict(query)
+        if before is not None:
+            q["at"] = {"$lt": before}
+        cursor = cls._history_db.find(q, {"_id": 0}).sort("at", -1).limit(max(1, min(limit, 200)))
+        return [doc async for doc in cursor]
+
+    @classmethod
+    async def get_history_songs(cls, query: Dict[str, Any], skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+        """One entry per song (video_id): its latest event (track_id, kind,
+        guild_id, at) plus how many times it was played / added. Newest
+        first by that latest time; `skip` pages back (not a time cut-off:
+        songs added together, e.g. a playlist, share one timestamp)."""
+        if cls._history_db is None:
+            return []
+        pipeline = [
+            {"$match": dict(query)},
+            {"$sort": {"at": -1}},
+            {"$group": {
+                "_id": "$video_id",
+                "track_id": {"$first": "$track_id"},
+                "kind": {"$first": "$kind"},
+                "guild_id": {"$first": "$guild_id"},
+                "at": {"$first": "$at"},
+                "plays": {"$sum": {"$cond": [{"$eq": ["$kind", "played"]}, 1, 0]}},
+                "adds": {"$sum": {"$cond": [{"$eq": ["$kind", "added"]}, 1, 0]}},
+            }},
+        ]
+        pipeline += [{"$sort": {"at": -1, "_id": 1}}, {"$skip": max(0, int(skip))}, {"$limit": max(1, min(limit, 200))}]
+        return [doc async for doc in cls._history_db.aggregate(pipeline)]
 
     @classmethod
     def add_settings_listener(cls, listener) -> None:

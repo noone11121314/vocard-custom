@@ -49,6 +49,12 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- New **Full history** page (menu): every song you played or added, in any
+  server, and every song played in this server - each song once, with how
+  many times it was played, grouped by day, with "Load more" to go further
+  back. Click a song to queue it. Old history
+  was imported from the bot's and Lavalink's logs (server history back to
+  24 Sep; personal history before 18 Oct only partly). (45)
 - Home shows your own lists first - "Recently added by you" and "Recently
   played by you", covering every server - then the server's lists,
   labelled with its name. All lists are newest-first. (44)

@@ -222,6 +222,47 @@ function renderRecentTracks(containerId, trackIds) {
     return container.children().length;
 }
 
+// Patch 45: Full history page - each song once, newest first. Asks for the
+// first 100 songs of a scope ("user" or "guild"); "Load more" the next 100.
+function openFullHistory(player, scope) {
+    player.fullHistory = { scope, offset: 0, lastDay: null, loading: false };
+    $("#full-history-page .fh-tab").removeClass("active").filter(`[data-scope="${scope}"]`).addClass("active");
+    $("#full-history-list").empty();
+    $("#full-history-empty, #full-history-load-more").hide();
+    changePage("full-history-page", true, false);
+    requestFullHistory(player, false);
+}
+
+function requestFullHistory(player, more) {
+    const fh = player.fullHistory;
+    if (!fh || fh.loading) return;
+    fh.loading = true;
+    $("#full-history-loader").show();
+    $("#full-history-load-more").hide();
+    player.send({ op: "getFullHistory", scope: fh.scope, offset: more ? fh.offset : 0, guildId: player.guildId || undefined });
+}
+
+function buildFullHistoryRowHtml(event, track, showServer) {
+    const at = new Date(event.at);
+    const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // One row per song: how often it was played (or just "Added" if never).
+    const badge = event.plays > 0 ? `<span class="fh-badge">${event.plays > 1 ? `Played ${event.plays}×` : "Played"}</span>` : `<span class="fh-badge added">Added</span>`;
+    const server = showServer && event.guildName ? ` · ${$("<div>").text(event.guildName).html()}` : "";
+    return `<div class="track-row" data-id="${event.trackId}">
+        <div class="left">
+            <img src="${track.artworkUrl}" onerror="this.src='/static/img/notFound.png'" alt="">
+            <div class="track-info">
+                <p class="title">${track.title}</p>
+                <p class="description">${track.author}</p>
+            </div>
+        </div>
+        <div class="right">
+            ${badge}<p class="fh-meta">${time}${server}</p>
+            <span class="material-symbols-outlined clickable">more_horiz</span>
+        </div>
+    </div>`;
+}
+
 // Patch 44: "Played in <server>" etc. above the server's lists.
 function setGuildNameLabels(guildName) {
     if (!guildName) return;
@@ -351,6 +392,33 @@ const methods = {
         setGuildNameLabels(data.guildName);
         if (added > 0) player.homeHas.guild = true;
         refreshHomePage(player);
+    },
+
+    // Patch 45: one page of the Full history. Ignores replies for a tab the
+    // user has already left.
+    getFullHistory: function (player, data) {
+        const fh = player.fullHistory;
+        if (!fh || data.scope !== fh.scope) return;
+        fh.loading = false;
+        $("#full-history-loader").hide();
+        const list = $("#full-history-list");
+        fh.offset = data.offset || 0;
+        (data.events || []).forEach((event) => {
+            let track;
+            try {
+                track = decode(event.trackId);
+            } catch (error) {
+                return;
+            }
+            const day = new Date(event.at).toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+            if (day !== fh.lastDay) {
+                fh.lastDay = day;
+                list.append(`<p class="fh-day">${day}</p>`);
+            }
+            list.append(buildFullHistoryRowHtml(event, track, fh.scope === "user"));
+        });
+        $("#full-history-empty").toggle(list.children().length === 0);
+        $("#full-history-load-more").toggle(!data.done);
     },
 
     // Patch 44: Home's personal lists, shown first - "Recently added by you"

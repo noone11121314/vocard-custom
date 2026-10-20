@@ -23,7 +23,7 @@ SOFTWARE.
 
 from __future__ import annotations
 
-import time, logging, asyncio, hashlib
+import time, logging, asyncio, hashlib, datetime
 
 from math import ceil
 from random import shuffle, choice
@@ -683,6 +683,7 @@ class Player(VoiceProtocol):
                 # off-by-one indexes for remove/move/skip-to.
                 await self.send_ws({"op": "trackLoading", "trackId": track.track_id, "currentQueuePosition": self.queue._position, "isPaused": self._paused})
 
+            resumed = bool(getattr(self, "_resume_start_ms", 0))
             start = getattr(self, "_resume_start_ms", 0) or track.position
             self._resume_start_ms = 0
             if not 0 <= start < track.length:
@@ -702,6 +703,8 @@ class Player(VoiceProtocol):
                 }))
 
             self._bot.loop.create_task(self._record_guild_play_history(track))
+            if not resumed:  # carrying on after a restart isn't a new play
+                self._bot.loop.create_task(self._record_history_events("played", [track]))
 
         await self.invoke_controller()
         await self.update_voice_status()
@@ -751,6 +754,28 @@ class Player(VoiceProtocol):
                 f"Failed to record guild play history for {track.title!r} in {self.guild.name}({self.guild.id})",
                 exc_info=e
             )
+
+    async def _record_history_events(self, kind: str, tracks: List[Track]) -> None:
+        """Patch 45: the uncapped full history - one event per song played or
+        added, with time, server and requester (None for the bot itself)."""
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            events = []
+            for track in tracks:
+                requester = getattr(track, "requester", None)
+                is_youtube = getattr(track, "source", "") == "youtube" and getattr(track, "identifier", None)
+                events.append({
+                    "kind": kind,
+                    "guild_id": self.guild.id,
+                    "user_id": None if requester is None or getattr(requester, "bot", False) else requester.id,
+                    "track_id": track.track_id,
+                    "video_id": track.identifier if is_youtube else (getattr(track, "uri", None) or track.track_id),
+                    "at": now,
+                    "source": "live",
+                })
+            await MongoDBHandler.add_history_events(events)
+        except Exception as e:
+            self._logger.debug(f"Failed to record {kind} history events", exc_info=e)
 
     async def _record_user_added_history(self, tracks: List[Track]) -> None:
         """Patch 44: the personal "Recently added by you" list - every song
@@ -1181,6 +1206,7 @@ class Player(VoiceProtocol):
 
                 self._bot.loop.create_task(self._record_guild_added_history(tracks))
                 self._bot.loop.create_task(self._record_user_added_history(tracks))
+                self._bot.loop.create_task(self._record_history_events("added", tracks))
 
                 return len(tracks) if is_list else position
     

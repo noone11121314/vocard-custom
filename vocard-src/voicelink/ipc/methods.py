@@ -848,6 +848,47 @@ async def getUserHistory(bot: commands.Bot, data: Dict) -> Dict:
         "addedHistory": added or [],
     }
 
+async def getFullHistory(bot: commands.Bot, data: Dict) -> Dict:
+    """Patch 45: the full history page, 100 songs at a time - each song once,
+    at the last time it was played/added, with how many times - newest first.
+    scope "user": everything this user played or added, in any server.
+    scope "guild": every song played in the user's server (by anyone).
+    `offset` (how many songs are already shown) pages further back."""
+    import datetime as _dt
+    user_id = int(data.get("userId"))
+    scope = data.get("scope") if data.get("scope") in ("user", "guild") else "user"
+    try:
+        offset = max(0, int(data.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    reply = {"op": "getFullHistory", "userId": str(user_id), "scope": scope, "events": [], "done": True, "append": offset > 0}
+    if scope == "guild":
+        guild = _resolve_guild_for_user(bot, user_id, data)
+        if not guild:
+            return reply
+        reply["guildName"] = guild.name
+        query = {"guild_id": guild.id, "kind": "played"}
+    else:
+        query = {"user_id": user_id}
+    songs = await MongoDBHandler.get_history_songs(query, offset, 100)
+    names = {}
+    for e in songs:
+        gid = e.get("guild_id")
+        if gid not in names:
+            g = bot.get_guild(gid) if gid else None
+            names[gid] = g.name if g else None
+    reply["events"] = [{
+        "trackId": e.get("track_id"),
+        "kind": e.get("kind"),
+        "at": (e["at"].replace(tzinfo=_dt.timezone.utc) if e["at"].tzinfo is None else e["at"]).isoformat(),
+        "guildName": names.get(e.get("guild_id")),
+        "plays": e.get("plays", 0),
+        "adds": e.get("adds", 0),
+    } for e in songs if e.get("track_id") and e.get("at")]
+    reply["offset"] = offset + len(songs)
+    reply["done"] = len(songs) < 100
+    return reply
+
 async def getGuildTopTracks(bot: commands.Bot, data: Dict) -> Dict:
     """Patch 9: powers the dashboard Explore page's "Trending" section.
     Previously this always fetched one hardcoded YouTube Music playlist
@@ -1049,6 +1090,7 @@ METHODS: Dict[str, Union[SystemMethod, PlayerMethod]] = {
     "getGuildHistory": SystemMethod(getGuildHistory, credit=2),
     "getGuildAddedHistory": SystemMethod(getGuildAddedHistory, credit=2),
     "getUserHistory": SystemMethod(getUserHistory, credit=2),
+    "getFullHistory": SystemMethod(getFullHistory, credit=2),
     "getGuildTopTracks": SystemMethod(getGuildTopTracks, credit=2),
     "initPlayer": PlayerMethod(initPlayer),
     "skipTo": PlayerMethod(skipTo),
