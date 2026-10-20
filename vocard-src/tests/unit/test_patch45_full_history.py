@@ -71,7 +71,7 @@ async def test_guild_scope_lists_only_plays_in_the_users_server(monkeypatch):
     result = await getFullHistory(MagicMock(), {"userId": "42", "scope": "guild", "offset": "garbage"})
 
     query, offset, _ = get.await_args.args
-    assert query == {"guild_id": 555, "kind": "played"} and offset == 0
+    assert query == {"guild_id": 555, "kind": "played", "private": {"$ne": True}} and offset == 0  # Patch 46: no one's own Cantus songs
     assert result["guildName"] == "Srv" and not result["done"] and not result["append"]
 
 

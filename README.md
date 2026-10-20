@@ -90,28 +90,19 @@ self-reloading dashboard pages, and no secrets in git or the image.
 ## Cantus Flaccus
 
 Members can play their own songs and playlists from a Cantus Flaccus server
-(`/cantus play`, `/cantus playlist`). Each member connects once, either way:
+(`/cantus play`, `/cantus playlist`). Each member connects once in the
+dashboard: **Settings -> Cantus**, paste a personal token (Cantus -> Account
+-> Connect other apps -> Create token, starts with `cfa_`) and Save. The
+server address is a default the bot's owner, a DJ or a server admin saves
+there once (or `settings.json` -> `"cantus": {"url": ..., "dashboard_url":
+...}`; only public addresses). `/cantus link` explains the steps,
+`/cantus unlink` forgets the token, revoking it in Cantus cuts Vocard off.
 
-- **Dashboard -> Settings -> Cantus:** paste a personal token (Cantus ->
-  Account -> Connect other apps -> Create token, starts with `cfa_`). The
-  server address is the one an admin saved there (only public addresses).
-- **`/cantus link` in Discord:** the bot sends a Cantus link (valid 10
-  minutes) to open while signed in, then press **Allow**. Needs the bot's app
-  key (a Cantus admin: Admin -> Apps -> New app "Vocard") in `settings.json`:
-
-  ```json
-  "cantus": {"url": "https://<your Cantus server>", "app_key": "<app key>"}
-  ```
-
-  Never commit it (`settings.json` is ignored). Or paste it in the
-  dashboard: Settings -> Cantus shows the bot's owner, DJs and server admins
-  an extra app key field (masked once saved, can't be read back); it works
-  at once, no restart.
-
-`/cantus unlink` (or Disconnect in the dashboard) disconnects; revoking the
-token in Cantus cuts Vocard off at once; `/cantus help` repeats the steps.
-Songs stream straight from Cantus (not cached); see Patch 46 in
-[`docs/local-patches.md`](docs/local-patches.md).
+A Cantus library is private: others see someone's Cantus songs only while
+they're queued or playing (they can still move, skip or remove them), never
+in server history or top lists, and only the owner can queue them again or
+save them. Songs stream straight from Cantus (not cached). Details: Patch 46
+in [`docs/local-patches.md`](docs/local-patches.md).
 
 ## Testing
 

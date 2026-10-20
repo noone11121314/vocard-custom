@@ -1,35 +1,36 @@
 """Cantus Flaccus: play a user's own songs and playlists from their Cantus
 library (vocard-custom issue #1; Patch 46).
 
-A Discord user is connected to Cantus in one of two ways; both end up as
-"this Discord user's Cantus library":
+**Connecting** (owner's decision, issue #1): each Discord user connects once
+in the dashboard (Settings -> Cantus) with a Cantus server address and a
+personal `cfa_` token (Cantus -> Account -> Connect other apps). It's stored
+per Discord user in Mongo `CantusLinks`; calls go to that server with
+`Authorization: Bearer <token>`. An admin can save a default server address
+(Mongo `CantusConfig`, else settings.json -> "cantus" -> "url") so members
+only paste their token. Revoking the token on Cantus cuts Vocard off.
 
-- **Token** (from the dashboard): their own server address and personal
-  `cfa_` token, stored per Discord user in Mongo `CantusLinks`. Calls go to
-  *their* server with `Authorization: Bearer <their token>`. Because the
-  server is whatever the user typed, every request (and every play link
-  handed to Lavalink) is checked to resolve only to public addresses, so a
-  member can't point the bot at Lavalink, Mongo or anything else internal.
-- **Pairing** (`/cantus link`): settings.json -> "cantus": {"url", "app_key"}
-  (a Cantus admin makes the key). Calls go to that server with the app key
-  plus `X-Cantus-Discord-User: <id>`; Cantus answers for the account the
-  user allowed (409 "not_linked" if none).
+**Only public servers:** because the server is whatever a user typed, every
+request (and every play link handed to Lavalink) is checked to resolve only
+to public addresses, so nobody can point the bot at Lavalink, Mongo or
+anything else internal.
 
-A token connection wins when a user has both. Nothing from the library is
-kept between commands (Cantus is asked live every time).
+**Private libraries:** a Cantus song belongs to whoever played it. Others see
+it only while it's queued or playing; it's left out of server-wide history,
+top lists and Full history's "This server", and only its owner can queue it
+again or save it (`is_foreign()`; callers in player.py, ipc/methods.py,
+views/). Nothing from a library is kept between commands - Cantus is asked
+live every time.
 
-A Cantus song is queued as a Track whose encoded id we build ourselves, with
-the song's real title/artists/length/cover (Lavalink's http source knows
-none of them) and `identifier = "cantus:<discord user id>:<song id>"` - the
-Discord user whose library it came from. It never holds a play link: those
-are signed and expire after 12 hours, which would break a song that waits in
-the queue, is resumed after a restart or is replayed from history. Instead
-Player.play() calls `resolve_for_play()` right before the song starts, which
-asks Cantus for a link and has Lavalink load it - so a song removed from the
-library, or a user who disconnected, is noticed at once.
+**Tracks:** a Cantus song is queued as a Track we encode ourselves, with the
+song's real title/artists/length/cover and `identifier =
+"cantus:<discord user id>:<song id>"` (whose library). It never holds a play
+link: those are signed, expire after 12 hours and let anyone holding one
+stream the file, so they're fetched right before each song
+(`resolve_for_play()`) and handed only to Lavalink. Queue, history and
+dashboards only ever see the song id.
 
-Tokens, the app key and play links are credentials: none is ever logged or
-sent back to a dashboard (it only ever sees `cfa_…<last 4>`).
+Tokens and play links are never logged or sent to a dashboard (it only ever
+sees `cfa_…<last 4>`).
 """
 from __future__ import annotations
 
@@ -53,25 +54,25 @@ logger = logging.getLogger("vocard.cantus")
 
 API = "/cantus/api/v1"
 SOURCE = "cantus"
+FOREIGN_NOTE = "That song is from someone's own Cantus library."
 # A link fetched moments ago (when the song was picked) is reused only
 # briefly: links are fetched right before each song, so a removal or a
 # disconnect takes effect on the next song.
 LINK_REUSE_SECONDS = 60
 
-# The app key/server an admin saved from the dashboard (Mongo CantusConfig);
-# wins over settings.json, so a new key works without a restart.
-_app_override: Dict[str, Any] = {}
+# The default server an admin saved from the dashboard (Mongo CantusConfig);
+# wins over settings.json.
+_default_server: Dict[str, str] = {}
 
 _session: Optional[aiohttp.ClientSession] = None
-_public_session: Optional[aiohttp.ClientSession] = None
 _links: Dict[Tuple[int, str], Tuple[float, str]] = {}
 _gains: Dict[str, float] = {}
 _measuring: set = set()
 
 
 class CantusError(Exception):
-    """A Cantus API error. `status` is the HTTP status (0: unreachable or not
-    configured, 400: refused by Vocard before calling); `code` names it."""
+    """A Cantus API error. `status` is the HTTP status (0: unreachable,
+    400: refused by Vocard before calling); `code` names it."""
 
     def __init__(self, status: int, code: str = "") -> None:
         super().__init__(code or f"Cantus answered {status}")
@@ -79,7 +80,7 @@ class CantusError(Exception):
 
     @property
     def not_linked(self) -> bool:
-        return self.status == 409 or self.code == "not_configured"
+        return self.code == "not_linked"
 
 
 class CantusUnavailable(Exception):
@@ -87,79 +88,48 @@ class CantusUnavailable(Exception):
     with this message as the note."""
 
 
-def _settings() -> Dict[str, Any]:
+# --- the default server ------------------------------------------------------
+
+def base_url() -> str:
+    """The default server members connect to (admin-saved, else settings)."""
+    if _default_server.get("url"):
+        return _default_server["url"]
     try:
-        configured = dict(Config().cantus or {})
+        return str((Config().cantus or {}).get("url") or "").rstrip("/")
     except Exception:
-        configured = {}
-    return {**configured, **{k: v for k, v in _app_override.items() if v}}
+        return ""
 
 
-async def load_app() -> None:
-    """At startup: the app key/server saved from the dashboard, if any."""
+def dashboard_url() -> str:
+    """Where `/cantus link` sends people (settings.json -> cantus -> dashboard_url)."""
+    try:
+        return str((Config().cantus or {}).get("dashboard_url") or "").rstrip("/")
+    except Exception:
+        return ""
+
+
+async def load_default_server() -> None:
     from .mongodb import MongoDBHandler
     try:
         saved = await MongoDBHandler.get_cantus_app() or {}
     except Exception:
         saved = {}
-    _app_override.clear()
-    _app_override.update({k: saved[k] for k in ("url", "app_key") if saved.get(k)})
+    _default_server.clear()
+    if saved.get("url"):
+        _default_server["url"] = saved["url"]
 
 
-def app_key_hint() -> str:
-    key = str(_settings().get("app_key") or "")
-    return f"{key[:4]}…{key[-4:]}" if key else ""
-
-
-async def save_app(url: str, app_key: Optional[str] = None) -> None:
-    """Dashboard (admins): checks the key against that server, then saves it.
-    No key given: keep the saved one (e.g. only the server address changed).
-    Cantus has no "who am I" for apps, so ask for a pairing code that can't
-    exist: a valid key gets 404, a wrong one 401/403."""
+async def save_default_server(url: str) -> str:
+    """Dashboard (admins): the server address members connect to."""
     server = normalize_server(url)
-    app_key = (app_key or "").strip() or str(_settings().get("app_key") or "")
-    if not app_key or len(app_key) > 512 or any(c.isspace() for c in app_key):
-        raise CantusError(400, "bad_key")
-    try:
-        await api("GET", "/link/vocard-key-check", account={"mode": "pairing", "server": server, "token": app_key})
-    except CantusError as e:
-        if e.status in (401, 403):
-            raise CantusError(e.status, "bad_key")
-        if e.status != 404:
-            raise
+    await check_public_url(server)
     from .mongodb import MongoDBHandler
-    await MongoDBHandler.set_cantus_app({"url": server, "app_key": app_key, "saved_at": time.time()})
-    _app_override.clear()
-    _app_override.update({"url": server, "app_key": app_key})
+    await MongoDBHandler.set_cantus_app({"url": server, "saved_at": time.time()})
+    _default_server["url"] = server
+    return server
 
 
-async def save_server(url: str) -> None:
-    """Dashboard (admins): just the shared server address, before (or
-    without) an app key - members then only paste their personal token."""
-    server = normalize_server(url)
-    from .mongodb import MongoDBHandler
-    saved = await MongoDBHandler.get_cantus_app() or {}
-    await MongoDBHandler.set_cantus_app({**{k: v for k, v in saved.items() if k != "_id"}, "url": server, "saved_at": time.time()})
-    _app_override["url"] = server
-
-
-async def remove_app() -> None:
-    from .mongodb import MongoDBHandler
-    await MongoDBHandler.set_cantus_app(None)
-    _app_override.clear()
-
-
-def base_url() -> str:
-    """The pairing server (settings.json)."""
-    return str(_settings().get("url") or "").rstrip("/")
-
-
-def is_configured() -> bool:
-    """Whether pairing is available (a server and an app key are set)."""
-    return bool(base_url() and _settings().get("app_key"))
-
-
-# --- only public addresses for user-given servers --------------------------
+# --- only public addresses ---------------------------------------------------
 
 def _is_public(address: str) -> bool:
     try:
@@ -170,7 +140,7 @@ def _is_public(address: str) -> bool:
 
 
 class _PublicResolver(AbstractResolver):
-    """DNS for user-given servers: refuses names that resolve to private,
+    """DNS for Cantus servers: refuses names that resolve to private,
     loopback, link-local or other non-public addresses (covers redirects
     and a name that changes what it points to between checks)."""
 
@@ -229,57 +199,37 @@ def normalize_server(raw: str) -> str:
 def _get_session() -> aiohttp.ClientSession:
     global _session
     if _session is None or _session.closed:
-        _session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
-    return _session
-
-
-def _get_public_session() -> aiohttp.ClientSession:
-    global _public_session
-    if _public_session is None or _public_session.closed:
-        _public_session = aiohttp.ClientSession(
+        _session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=15),
             connector=aiohttp.TCPConnector(resolver=_PublicResolver()),
         )
-    return _public_session
+    return _session
 
 
-# --- accounts ----------------------------------------------------------------
+# --- connections ---------------------------------------------------------------
 
-async def _account(discord_id: Optional[int]) -> Dict[str, Any]:
-    """How to call Cantus for this Discord user (token connection first)."""
-    if discord_id is not None:
-        from .mongodb import MongoDBHandler
-        link = await MongoDBHandler.get_cantus_link(discord_id)
-        if link and link.get("token") and link.get("server"):
-            return {"mode": "token", "server": link["server"], "token": link["token"]}
-    if not is_configured():
-        raise CantusError(0, "not_configured")
-    return {"mode": "pairing", "server": base_url(), "token": _settings()["app_key"]}
+async def _account(discord_id: int) -> Dict[str, Any]:
+    from .mongodb import MongoDBHandler
+    link = await MongoDBHandler.get_cantus_link(discord_id)
+    if not link or not link.get("token") or not link.get("server"):
+        raise CantusError(409, "not_linked")
+    return {"server": link["server"], "token": link["token"]}
 
 
 async def api(method: str, path: str, discord_id: Optional[int] = None, *, params: Optional[Dict[str, Any]] = None,
-              json: Any = None, account: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Calls `<server>/cantus/api/v1<path>` for `discord_id` (or as the bot)."""
+              account: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Calls `<server>/cantus/api/v1<path>` with `discord_id`'s token."""
     acct = account or await _account(discord_id)
-    headers = {"Authorization": f"Bearer {acct['token']}"}
-    if acct["mode"] == "pairing" and discord_id is not None:
-        headers["X-Cantus-Discord-User"] = str(discord_id)
     url = f"{acct['server']}{API}{path}"
-    if acct["mode"] == "token":
-        await check_public_url(url)
-        session = _get_public_session()
-    else:
-        session = _get_session()
+    await check_public_url(url)
     try:
-        async with session.request(method, url, params=params, json=json, headers=headers) as resp:
+        async with _get_session().request(method, url, params=params, headers={"Authorization": f"Bearer {acct['token']}"}) as resp:
             try:
                 data = await resp.json(content_type=None)
             except Exception:
                 data = None
             if resp.status >= 300:
-                code = data.get("error", "") if isinstance(data, dict) else ""
-                if resp.status == 401 and acct["mode"] == "token":
-                    code = "token_revoked"
+                code = "token_revoked" if resp.status == 401 else (data.get("error", "") if isinstance(data, dict) else "")
                 raise CantusError(resp.status, code)
             return data if isinstance(data, dict) else {}
     except CantusError:
@@ -300,8 +250,7 @@ async def connect_token(discord_id: int, server: str, token: str) -> Dict[str, A
     token = (token or "").strip()
     if not token or len(token) > 512 or any(c.isspace() for c in token):
         raise CantusError(400, "bad_token")
-    await check_public_url(server)
-    me_ = await api("GET", "/me", account={"mode": "token", "server": server, "token": token})
+    me_ = await api("GET", "/me", account={"server": server, "token": token})
     from .mongodb import MongoDBHandler
     _forget_links_of(discord_id)
     await MongoDBHandler.set_cantus_link(discord_id, {
@@ -314,75 +263,22 @@ async def status(discord_id: int) -> Dict[str, Any]:
     """What the dashboard shows - never the token itself."""
     from .mongodb import MongoDBHandler
     link = await MongoDBHandler.get_cantus_link(discord_id)
-    result: Dict[str, Any] = {"connected": False, "pairingAvailable": is_configured(), "defaultServer": base_url()}
+    result: Dict[str, Any] = {"connected": False, "defaultServer": base_url()}
     if link and link.get("token"):
-        result.update(connected=True, mode="token", server=link.get("server"), username=link.get("username"), tokenHint=token_hint(link["token"]))
+        result.update(connected=True, server=link.get("server"), username=link.get("username"), tokenHint=token_hint(link["token"]))
         try:
             me_ = await me(discord_id)
             result.update(username=me_.get("username") or result["username"], songs=me_.get("songs"))
         except CantusError as e:
             result["problem"] = e.code or str(e.status)
-        return result
-    if is_configured():
-        try:
-            me_ = await me(discord_id)
-            result.update(connected=True, mode="pairing", server=base_url(), username=me_.get("username"), songs=me_.get("songs"))
-        except CantusError as e:
-            if not e.not_linked:
-                result["problem"] = e.code or str(e.status)
     return result
 
 
-async def disconnect(discord_id: int) -> None:
-    """Forgets a token connection and ends a pairing (both, if both)."""
+async def disconnect(discord_id: int) -> bool:
+    """Forgets this Discord user's token."""
     from .mongodb import MongoDBHandler
     _forget_links_of(discord_id)
-    await MongoDBHandler.delete_cantus_link(discord_id)
-    if is_configured():
-        try:
-            await api("DELETE", "/link", discord_id, account={"mode": "pairing", "server": base_url(), "token": _settings()["app_key"]})
-        except CantusError as e:
-            if not e.not_linked:
-                raise
-
-
-# --- pairing -----------------------------------------------------------------
-
-def _pairing_account() -> Dict[str, Any]:
-    if not is_configured():
-        raise CantusError(0, "not_configured")
-    return {"mode": "pairing", "server": base_url(), "token": _settings()["app_key"]}
-
-
-async def start_link(discord_id: int, discord_name: str) -> Dict[str, Any]:
-    """{code, url, expires}: the page the user opens to press Allow."""
-    acct = _pairing_account()
-    data = await api("POST", "/link/start", account=acct, json={"discord_id": str(discord_id), "discord_name": discord_name})
-    if data.get("url"):
-        data["url"] = _full_url(data["url"], acct["server"])
-    return data
-
-
-async def link_status(code: str) -> Dict[str, Any]:
-    """{status: "pending"|"linked"|"denied"|"expired", username?}"""
-    return await api("GET", f"/link/{quote(code, safe='')}", account=_pairing_account())
-
-
-async def wait_for_link(code: str, timeout: float = 600, interval: float = 3) -> Dict[str, Any]:
-    """Polls until the user pressed Allow or Deny, the code expired (or
-    Cantus restarted and forgot it: 404) or `timeout`."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            state = await link_status(code)
-        except CantusError as e:
-            if e.status == 404:
-                return {"status": "expired"}
-            state = {"status": "pending"}  # a hiccup: keep waiting
-        if state.get("status") in ("linked", "denied", "expired"):
-            return state
-        await asyncio.sleep(interval)
-    return {"status": "expired"}
+    return await MongoDBHandler.delete_cantus_link(discord_id)
 
 
 def _forget_links_of(discord_id: int) -> None:
@@ -417,7 +313,7 @@ async def server_of(discord_id: int) -> str:
     return (await _account(discord_id))["server"]
 
 
-# --- tracks ------------------------------------------------------------------
+# --- tracks and privacy --------------------------------------------------------
 
 def choice_label(text: str) -> str:
     """Discord allows 100 characters in an autocomplete choice."""
@@ -460,6 +356,31 @@ def parse_identifier(identifier: str) -> Optional[Tuple[int, str]]:
         return None
 
 
+def owner_of(track) -> Optional[int]:
+    """The Discord user whose Cantus library a track is from (None: not a
+    Cantus track). Takes a Track, or a decoded info dict."""
+    if isinstance(track, dict):
+        source, identifier = track.get("sourceName"), track.get("identifier")
+    else:
+        source, identifier = getattr(track, "source", None), getattr(track, "identifier", None)
+    if source != SOURCE:
+        return None
+    parsed = parse_identifier(identifier)
+    return parsed[0] if parsed else None
+
+
+def is_foreign(track, user_id: Optional[int]) -> bool:
+    """True for a Cantus song from someone else's library: `user_id` may not
+    queue it again, save it, or see it in history."""
+    owner = owner_of(track)
+    return owner is not None and owner != user_id
+
+
+def is_private(track) -> bool:
+    """Cantus songs never go into server-wide history or stats."""
+    return owner_of(track) is not None
+
+
 def _full_url(url: str, server: str) -> str:
     """Cantus returns paths; an absolute link must point at the same server."""
     url = str(url)
@@ -477,7 +398,7 @@ async def song_by_id(discord_id: int, song_id: str) -> Optional[Dict[str, Any]]:
     for the play that follows."""
     acct = await _account(discord_id)
     try:
-        data = await api("GET", f"/songs/{quote(song_id, safe='')}/stream", discord_id, account=acct)
+        data = await api("GET", f"/songs/{quote(song_id, safe='')}/stream", account=acct)
     except CantusError as e:
         if e.status == 404:
             return None
@@ -497,7 +418,7 @@ async def stream_url(discord_id: int, song_id: str, *, fresh: bool = False, acco
     if cached and not fresh and time.monotonic() - cached[0] < LINK_REUSE_SECONDS:
         return cached[1]
     acct = account or await _account(discord_id)
-    data = await api("GET", f"/songs/{quote(song_id, safe='')}/stream", discord_id, account=acct)
+    data = await api("GET", f"/songs/{quote(song_id, safe='')}/stream", account=acct)
     if not data.get("url"):
         raise CantusError(404, "no play link")
     url = _full_url(data["url"], acct["server"])
@@ -505,28 +426,13 @@ async def stream_url(discord_id: int, song_id: str, *, fresh: bool = False, acco
     return url
 
 
-def _accounts_to_try(track: Track, guild) -> list:
-    """Whose library to play from: the requester's first (their own song,
-    or a friend's song that's in their library too), then the song's owner
-    - only while they're in this server (e.g. someone replays the owner's
-    song from this server's history)."""
-    owner, _ = parse_identifier(track.identifier)
-    order = []
-    requester = getattr(track, "requester", None)
-    if requester is not None and not getattr(requester, "bot", False):
-        order.append(requester.id)
-    if owner not in order and (guild is None or guild.get_member(owner) is not None):
-        order.append(owner)
-    return order
-
-
-def _skip_reason(e: CantusError, mode: Optional[str]) -> str:
+def _skip_reason(e: CantusError) -> str:
     if e.not_linked:
-        return "it needs a connected Cantus account (`/cantus link` or the dashboard)."
+        return "its owner's Cantus account isn't connected any more."
     if e.code == "token_revoked":
-        return "the Cantus token was revoked - reconnect it in the dashboard."
+        return "the Cantus token was revoked - reconnect it in the dashboard (Settings -> Cantus)."
     if e.status in (401, 403):
-        return "Cantus refused the bot (its app key may have been revoked)." if mode == "pairing" else "Cantus refused it."
+        return "Cantus refused it."
     if e.status == 404:
         return "it's no longer in the Cantus library."
     if e.code in ("private_address", "foreign_link", "bad_url"):
@@ -536,36 +442,34 @@ def _skip_reason(e: CantusError, mode: Optional[str]) -> str:
 
 async def resolve_for_play(player, track: Track) -> Tuple[str, float]:
     """Player.play()'s hook: (a Lavalink track, its loudness gain) for a
-    queued Cantus song. Raises CantusUnavailable (with the reason) if it
-    can't be played."""
+    queued Cantus song, from its owner's library only. Raises
+    CantusUnavailable (with the reason) if it can't be played."""
     parsed = parse_identifier(track.identifier)
     if not parsed:
         raise CantusUnavailable("it isn't a valid Cantus song.")
-    _, song_id = parsed
-    reason = "its owner isn't in this server."
-    for discord_id in _accounts_to_try(track, getattr(player, "guild", None)):
-        acct = None
-        for attempt in range(2):
-            try:
-                acct = acct or await _account(discord_id)
-                url = await stream_url(discord_id, song_id, fresh=attempt > 0, account=acct)
-                if acct["mode"] == "token":
-                    await check_public_url(url)  # Lavalink fetches it, not us
-            except CantusError as e:
-                reason = _skip_reason(e, acct and acct["mode"])
-                break
-            try:
-                response = await player._node.send(RequestMethod.GET, f"loadtracks?identifier={quote(url, safe='')}")
-            except Exception:
-                response = {}
-            if (response or {}).get("loadType") == "track":
-                key = _gain_key(acct["server"], song_id)
-                player._bot.loop.create_task(_measure(key, url))
-                return response["data"]["encoded"], await gain(key)
-            # A reused link that stopped working: try once with a new one.
-            _links.pop((discord_id, song_id), None)
-            reason = "its file couldn't be loaded."
-    raise CantusUnavailable(reason)
+    owner, song_id = parsed
+    requester = getattr(track, "requester", None)
+    if requester is not None and getattr(requester, "id", None) != owner:
+        raise CantusUnavailable("it's from someone else's own Cantus library.")
+    acct = None
+    for attempt in range(2):
+        try:
+            acct = acct or await _account(owner)
+            url = await stream_url(owner, song_id, fresh=attempt > 0, account=acct)
+            await check_public_url(url)  # Lavalink fetches it, not us
+        except CantusError as e:
+            raise CantusUnavailable(_skip_reason(e))
+        try:
+            response = await player._node.send(RequestMethod.GET, f"loadtracks?identifier={quote(url, safe='')}")
+        except Exception:
+            response = {}
+        if (response or {}).get("loadType") == "track":
+            key = _gain_key(acct["server"], song_id)
+            player._bot.loop.create_task(_measure(key, url))
+            return response["data"]["encoded"], await gain(key)
+        # A reused link that stopped working: try once with a new one.
+        _links.pop((owner, song_id), None)
+    raise CantusUnavailable("its file couldn't be loaded.")
 
 
 # --- loudness ----------------------------------------------------------------

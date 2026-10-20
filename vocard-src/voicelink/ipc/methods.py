@@ -594,6 +594,9 @@ async def updatePlaylist(bot: commands.Bot, data: Dict) -> Dict:
         decoded_track = Track(track_id=track_id, info=Track.decode(track_id), requester=None)
         if decoded_track.is_stream:
             return error_msg("You are not allowed to add streaming videos to your playlist.", user_id=user_id)
+        from voicelink import cantus
+        if cantus.is_foreign(decoded_track, int(user_id)):  # Patch 46
+            return error_msg(cantus.FOREIGN_NOTE, user_id=user_id)
         
         await MongoDBHandler.update_user(user_id, {"$push": {f'playlist.{playlist_id}.tracks': track_id}})
         return {
@@ -851,6 +854,7 @@ async def getUserHistory(bot: commands.Bot, data: Dict) -> Dict:
 _CANTUS_MESSAGES = {
     "token_revoked": "That token isn't valid (or was revoked).",
     "bad_token": "That doesn't look like a Cantus token.",
+    "not_linked": "You aren't connected to Cantus yet.",
     "bad_url": "That server address isn't valid.",
     "private_address": "That server address isn't allowed (it must be a public address).",
     "unresolvable": "That server address couldn't be found.",
@@ -868,11 +872,10 @@ def _cantus_message(e) -> str:
 
 
 async def _is_bot_admin(bot: commands.Bot, user_id: int, data: Dict = None) -> bool:
-    """Patch 46: who may set the bot's Cantus app key - the bot's owner on
-    Discord (the application's owner or team), a bot_access_user, or (user's
-    call) a DJ / server admin in any server the bot shares with them, same
-    check as the cache manager. The key is bot-wide, so any of them changes
-    it for every server."""
+    """Patch 46: who may set the default Cantus server - the bot's owner on
+    Discord (the application's owner or team), a bot_access_user, or a DJ /
+    server admin in any server the bot shares with them (the cache
+    manager's check). It's bot-wide, so any of them sets it for every server."""
     if user_id in Config().bot_access_user:
         return True
     try:
@@ -889,107 +892,54 @@ async def _is_bot_admin(bot: commands.Bot, user_id: int, data: Dict = None) -> b
 
 async def cantusStatus(bot: commands.Bot, data: Dict, message: str = None, ok: bool = True) -> Dict:
     """Patch 46: the dashboard's Cantus section - whether this Discord user
-    is connected (token or pairing), as whom, and with how many songs. Never
-    includes the token (only cfa_…<last 4>)."""
+    is connected, as whom, with how many songs, and the default server.
+    Never includes the token (only cfa_…<last 4>)."""
     from voicelink import cantus
     user_id = int(data.get("userId"))
     try:
         state = await cantus.status(user_id)
     except Exception:
-        state = {"connected": False}
-    reply = {"op": "cantusStatus", "userId": str(user_id), **state}
-    if await _is_bot_admin(bot, user_id, data):
-        reply["admin"] = {"configured": cantus.is_configured(), "url": cantus.base_url(), "keyHint": cantus.app_key_hint()}
+        state = {"connected": False, "defaultServer": cantus.base_url()}
+    reply = {"op": "cantusStatus", "userId": str(user_id), **state, "canSetServer": await _is_bot_admin(bot, user_id, data)}
     if message:
         reply.update(message=message, ok=ok)
     return reply
 
 
-async def cantusConnect(bot: commands.Bot, data: Dict) -> Dict:
-    """Patch 46: dashboard "Save" - connect with a server address + personal token."""
-    from voicelink import cantus
-    try:
-        account = await cantus.connect_token(int(data.get("userId")), str(data.get("server") or ""), str(data.get("token") or ""))
-    except cantus.CantusError as e:
-        return await cantusStatus(bot, data, _cantus_message(e), ok=False)
-    return await cantusStatus(bot, data, f"Connected as {account.get('username') or '?'}.")
-
-
-async def cantusAppSave(bot: commands.Bot, data: Dict) -> Dict:
-    """Patch 46: an admin pastes the bot's Cantus app key (cfk_...) in the
-    dashboard; it's checked, saved in Mongo and used at once."""
-    from voicelink import cantus
-    if not await _is_bot_admin(bot, int(data.get("userId")), data):
-        return await cantusStatus(bot, data, "Only the bot's owner, DJs and server admins can set the app key.", ok=False)
-    try:
-        await cantus.save_app(str(data.get("url") or ""), str(data.get("appKey") or ""))
-    except cantus.CantusError as e:
-        text = "Cantus didn't accept that app key." if e.code == "bad_key" else _cantus_message(e)
-        return await cantusStatus(bot, data, text, ok=False)
-    return await cantusStatus(bot, data, "App key saved - /cantus link works now.")
-
-
 async def cantusSave(bot: commands.Bot, data: Dict) -> Dict:
-    """Patch 46: the dashboard's one Cantus form - server address, the bot's
-    app key (owner/DJs/admins only) and a personal token, each optional.
-    Saves whatever was filled in; for an admin, a changed server address
-    alone re-checks the saved app key against it. Never echoes either key."""
+    """Patch 46: the dashboard's Cantus form - server address + personal
+    token. Members only paste the token (the default server is used);
+    admins can also change the default server, with or without a token."""
     from voicelink import cantus
     user_id = int(data.get("userId"))
     server = str(data.get("server") or "").strip()
-    app_key = str(data.get("appKey") or "").strip()
     token = str(data.get("token") or "").strip()
-    done = []
-    is_admin = await _is_bot_admin(bot, user_id, data)
-    if app_key and not is_admin:
-        return await cantusStatus(bot, data, "Only the bot's owner, DJs and server admins can set the app key.", ok=False)
-    if not is_admin and cantus.base_url():
-        server = cantus.base_url()  # members only paste a token; the server is the admins' choice
+    can_set_server = await _is_bot_admin(bot, user_id, data)
+    if not can_set_server and cantus.base_url():
+        server = cantus.base_url()  # members only paste a token
     if not server:
         return await cantusStatus(bot, data, "Enter the Cantus server address.", ok=False)
+    done = []
     try:
-        moved = cantus.normalize_server(server) != cantus.base_url()
-    except cantus.CantusError as e:
-        return await cantusStatus(bot, data, _cantus_message(e), ok=False)
-    if is_admin and moved and not app_key and not cantus.is_configured():
-        # No app key yet: just share the server address with everyone.
-        await cantus.save_server(server)
-        done.append("server address saved for everyone")
-    if is_admin and (app_key or (moved and cantus.is_configured() and not token)):
-        try:
-            await cantus.save_app(server, app_key or None)
-            done.append("app key saved - /cantus link works")
-        except cantus.CantusError as e:
-            text = "Cantus didn't accept that app key." if e.code == "bad_key" else _cantus_message(e)
-            return await cantusStatus(bot, data, text, ok=False)
-    if token:
-        try:
+        if can_set_server and cantus.normalize_server(server) != cantus.base_url():
+            await cantus.save_default_server(server)
+            done.append("default server saved for everyone")
+        if token:
             account = await cantus.connect_token(user_id, server, token)
             done.append(f"connected as {account.get('username') or '?'}")
-        except cantus.CantusError as e:
-            prefix = "App key saved, but the token failed: " if done else ""
-            return await cantusStatus(bot, data, prefix + _cantus_message(e), ok=False)
+    except cantus.CantusError as e:
+        prefix = "Default server saved, but the token failed: " if done else ""
+        return await cantusStatus(bot, data, prefix + _cantus_message(e), ok=False)
     if not done:
-        return await cantusStatus(bot, data, "Nothing to save - paste a personal token" + (" or the app key." if is_admin else "."), ok=False)
+        return await cantusStatus(bot, data, "Paste your personal token (cfa_…) first.", ok=False)
     text = "; ".join(done)
     return await cantusStatus(bot, data, text[0].upper() + text[1:] + ".")
 
 
-async def cantusAppRemove(bot: commands.Bot, data: Dict) -> Dict:
-    from voicelink import cantus
-    if not await _is_bot_admin(bot, int(data.get("userId")), data):
-        return await cantusStatus(bot, data, "Only the bot's owner, DJs and server admins can change the app key.", ok=False)
-    await cantus.remove_app()
-    return await cantusStatus(bot, data, "App key removed from the dashboard settings.")
-
-
 async def cantusDisconnect(bot: commands.Bot, data: Dict) -> Dict:
     from voicelink import cantus
-    try:
-        await cantus.disconnect(int(data.get("userId")))
-    except cantus.CantusError:
-        return await cantusStatus(bot, data, "Disconnected here, but Cantus didn't confirm - try again.", ok=False)
-    return await cantusStatus(bot, data, "Disconnected.")
+    await cantus.disconnect(int(data.get("userId")))
+    return await cantusStatus(bot, data, "Disconnected - your token is forgotten.")
 
 
 async def getFullHistory(bot: commands.Bot, data: Dict) -> Dict:
@@ -1011,7 +961,7 @@ async def getFullHistory(bot: commands.Bot, data: Dict) -> Dict:
         if not guild:
             return reply
         reply["guildName"] = guild.name
-        query = {"guild_id": guild.id, "kind": "played"}
+        query = {"guild_id": guild.id, "kind": "played", "private": {"$ne": True}}  # Patch 46
     else:
         query = {"user_id": user_id}
     songs = await MongoDBHandler.get_history_songs(query, offset, 100)
@@ -1236,11 +1186,8 @@ METHODS: Dict[str, Union[SystemMethod, PlayerMethod]] = {
     "getUserHistory": SystemMethod(getUserHistory, credit=2),
     "getFullHistory": SystemMethod(getFullHistory, credit=2),
     "cantusStatus": SystemMethod(cantusStatus, credit=2),
-    "cantusConnect": SystemMethod(cantusConnect, credit=10),
     "cantusDisconnect": SystemMethod(cantusDisconnect, credit=5),
-    "cantusAppSave": SystemMethod(cantusAppSave, credit=10),
     "cantusSave": SystemMethod(cantusSave, credit=10),
-    "cantusAppRemove": SystemMethod(cantusAppRemove, credit=5),
     "getGuildTopTracks": SystemMethod(getGuildTopTracks, credit=2),
     "initPlayer": PlayerMethod(initPlayer),
     "skipTo": PlayerMethod(skipTo),

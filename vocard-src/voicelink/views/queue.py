@@ -33,6 +33,7 @@ from .pagination import PaginationView
 from ..language import LangHandler
 from ..config import Config
 from ..utils import format_ms, truncate_string
+from .. import cantus
 
 if TYPE_CHECKING:
     from ..player import Player
@@ -54,7 +55,8 @@ class QueueView(PaginationView):
     def __init__(self, player: "Player", author: discord.Member, is_queue: bool = True) -> None:
         super().__init__(
             Pagination["Track"](
-                items=player.queue.tracks() if is_queue else list(reversed(player.queue.history(not player.current))),
+                # Patch 46: the history list leaves out other people's Cantus songs.
+                items=player.queue.tracks() if is_queue else [t for t in reversed(player.queue.history(not player.current)) if not cantus.is_foreign(t, author.id)],
                 page_size=7,
             ),
             author

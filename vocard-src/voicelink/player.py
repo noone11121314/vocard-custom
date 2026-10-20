@@ -743,6 +743,8 @@ class Player(VoiceProtocol):
         count (for "top played"). Best-effort and fire-and-forget: a
         failure here must never affect playback itself.
         """
+        if cantus.is_private(track):
+            return  # Patch 46: someone's own Cantus song isn't server history
         try:
             category = "upload" if track.source in ("http", "local") else "bot"
             raw_key = track.identifier or track.uri or track.track_id
@@ -781,6 +783,8 @@ class Player(VoiceProtocol):
                     "video_id": track.identifier if is_youtube else (getattr(track, "uri", None) or track.track_id),
                     "at": now,
                     "source": "live",
+                    # Patch 46: only its owner's history lists a Cantus song.
+                    **({"private": True} if cantus.is_private(track) else {}),
                 })
             await MongoDBHandler.add_history_events(events)
         except Exception as e:
@@ -822,7 +826,8 @@ class Player(VoiceProtocol):
         already happened by the time this runs.
         """
         try:
-            track_ids = [track.track_id for track in tracks]
+            # Patch 46: someone's own Cantus songs aren't server history.
+            track_ids = [track.track_id for track in tracks if not cantus.is_private(track)]
             if not track_ids:
                 return
             await MongoDBHandler.update_settings(self.guild.id, {
@@ -1153,6 +1158,14 @@ class Player(VoiceProtocol):
         
     async def add_track(self, raw_tracks: Union[Track, List[Track]], *, start_time: int = 0, end_time: int = 0, at_front: bool = False, duplicate: bool = True) -> int:
         """Adds one or more tracks to the queue."""
+        # Patch 46: a Cantus song from someone else's library (e.g. clicked in
+        # a history list or a shared playlist) can only be queued by its owner.
+        listed = raw_tracks if isinstance(raw_tracks, List) else [raw_tracks]
+        allowed = [t for t in listed if not cantus.is_foreign(t, getattr(getattr(t, "requester", None), "id", None))]
+        if not allowed:
+            raise VoicelinkException(cantus.FOREIGN_NOTE)
+        if len(allowed) != len(listed):
+            raw_tracks = allowed
         tracks: List[Track] = []
         # Patch 40: only the current and upcoming songs count as duplicates -
         # with duplicates turned off, a song that already played (history)

@@ -1,9 +1,10 @@
 """Patch 46 (vocard-custom issue #1): /cantus - play your own songs and
 playlists from Cantus Flaccus. See voicelink/cantus.py for how it talks to
-Cantus and how queued songs get their play links.
+Cantus, how queued songs get their play links and why they're private.
 
 Slash commands only (no prefix forms), and every account reply is
-ephemeral."""
+ephemeral. Connecting happens in the dashboard (a personal token), so a
+token is never typed in Discord: `/cantus link` just explains the steps."""
 
 import discord
 import voicelink
@@ -13,29 +14,32 @@ from discord.ext import commands
 
 from voicelink import cantus
 
-HELP_TEXT = (
-    "**Cantus Flaccus in Vocard**\n"
-    "1. Connect once, either way:\n"
-    "   - `/cantus link` - I send you a link (valid 10 minutes). Open it while signed in to Cantus and press **Allow**.\n"
-    "   - or the Vocard dashboard -> Settings -> Cantus: your server and a personal token "
-    "(Cantus -> Account -> Connect other apps -> Create token). Revoking the token in Cantus cuts Vocard off.\n"
-    "2. `/cantus play` - type to search your library, pick a song.\n"
-    "3. `/cantus playlist` - queue one of your playlists.\n"
-    "`/cantus unlink` (or Disconnect in the dashboard) disconnects."
+STEPS = (
+    "1. In Cantus: **Account -> Connect other apps -> Create token** (name it e.g. \"Vocard\"; it starts with `cfa_` and is shown once).\n"
+    "2. In Vocard's dashboard: **Settings -> Cantus**, paste the token and press **Save**.\n"
+    "Then `/cantus play` and `/cantus playlist` use your own library. Your Cantus songs stay yours: "
+    "others only see them while they're in the queue. Revoking the token in Cantus cuts Vocard off; "
+    "`/cantus unlink` forgets it here."
 )
-NOT_LINKED = "Your Discord account isn't connected to Cantus yet - use `/cantus link`, or connect with a token in the dashboard (Settings -> Cantus)."
-NO_PAIRING = "Linking from Discord isn't set up on this bot - connect with a token in the dashboard instead (Settings -> Cantus)."
+NOT_LINKED = "Your Discord account isn't connected to Cantus yet - see `/cantus link`."
+
+
+def _steps() -> str:
+    """The token steps, with a link to the dashboard when settings.json has one.
+    Tokens are never typed in Discord."""
+    url = cantus.dashboard_url()
+    return STEPS + (f"\nDashboard: {url}" if url else "")
 
 
 def _error_text(e: cantus.CantusError) -> str:
     if e.not_linked:
         return NOT_LINKED
     if e.code == "token_revoked":
-        return "Your Cantus token isn't valid any more (revoked?) - reconnect in the dashboard (Settings -> Cantus)."
+        return "Your Cantus token isn't valid any more (revoked?) - paste a new one in the dashboard (Settings -> Cantus)."
     if e.code in ("private_address", "bad_url", "foreign_link"):
         return "Your Cantus server address isn't allowed - reconnect in the dashboard."
     if e.status in (401, 403):
-        return "Cantus refused the bot - its app key may have been revoked."
+        return "Cantus refused that."
     if e.status == 404:
         return "Not found in your Cantus library."
     return "Cantus didn't answer - try again in a moment."
@@ -50,7 +54,7 @@ class Cantus(commands.Cog, name="cantus"):
 
     async def cog_load(self) -> None:
         await cantus.load_gains()
-        await cantus.load_app()
+        await cantus.load_default_server()
 
     # --- autocomplete ------------------------------------------------------
 
@@ -74,43 +78,19 @@ class Cantus(commands.Cog, name="cantus"):
 
     @group.command(name="help", description="How to connect Cantus and play from it.")
     async def help(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(HELP_TEXT, ephemeral=True)
+        await interaction.response.send_message("**Cantus Flaccus in Vocard**\n" + _steps(), ephemeral=True)
 
-    @group.command(name="link", description="Connect your Cantus account.")
+    @group.command(name="link", description="How to connect your Cantus account (in the dashboard).")
     async def link(self, interaction: discord.Interaction) -> None:
-        if not cantus.is_configured():
-            return await interaction.response.send_message(NO_PAIRING, ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            pairing = await cantus.start_link(interaction.user.id, interaction.user.name)
-        except cantus.CantusError as e:
-            return await interaction.followup.send(_error_text(e), ephemeral=True)
-        if not pairing.get("url") or not pairing.get("code"):
-            return await interaction.followup.send("Cantus didn't return a link - try again in a moment.", ephemeral=True)
-        await interaction.followup.send(
-            f"Open this to connect your Cantus account (valid 10 minutes), then press **Allow**:\n{pairing['url']}",
-            ephemeral=True,
-        )
-        result = await cantus.wait_for_link(pairing["code"])
-        if result.get("status") == "linked":
-            text = f"Linked to Cantus account **{result.get('username') or '?'}**. Try `/cantus play`."
-        elif result.get("status") == "denied":
-            text = "Linking was denied on Cantus - nothing was connected."
-        else:
-            text = "That link expired before it was allowed - run `/cantus link` again."
-        try:
-            await interaction.followup.send(text, ephemeral=True)
-        except discord.HTTPException:
-            pass
+        await interaction.response.send_message("**Connect your Cantus account**\n" + _steps(), ephemeral=True)
 
     @group.command(name="unlink", description="Disconnect your Cantus account.")
     async def unlink(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        try:
-            await cantus.disconnect(interaction.user.id)
-        except cantus.CantusError as e:
-            return await interaction.followup.send(_error_text(e), ephemeral=True)
-        await interaction.followup.send("Your Cantus account is disconnected.", ephemeral=True)
+        if await cantus.disconnect(interaction.user.id):
+            await interaction.followup.send("Your Cantus token is forgotten - Vocard can't reach your library any more.", ephemeral=True)
+        else:
+            await interaction.followup.send("You weren't connected to Cantus.", ephemeral=True)
 
     # --- playing -----------------------------------------------------------
 

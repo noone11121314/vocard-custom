@@ -225,6 +225,9 @@ class AddFav(ControlButton):
             return await self.send(interaction, "player.errors.noTrackPlaying")
         if track.is_stream:
             return await self.send(interaction, "playlist.errors.streamNotAllowed")
+        from voicelink import cantus
+        if cantus.is_foreign(track, interaction.user.id):  # Patch 46: only its owner saves a Cantus song
+            return await interaction.response.send_message(cantus.FOREIGN_NOTE, ephemeral=True)
         user = await MongoDBHandler.get_user(interaction.user.id, d_type='playlist')
         _, max_t, _ = Config().get_playlist_config()
         if len(user['200']['tracks']) >= max_t:

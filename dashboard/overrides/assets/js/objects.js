@@ -222,6 +222,19 @@ function renderRecentTracks(containerId, trackIds) {
     return container.children().length;
 }
 
+// Patch 46: a Cantus song from someone else's library (identifier
+// "cantus:<owner's discord id>:<song id>"). Those are private: shown only while
+// queued or playing, never in history, never saved or re-queued by others.
+// (Recognised by the identifier: the page's Track class drops the source
+// name the decoder reads.)
+function isCantusTrack(track) {
+    return !!track && /^cantus:\d+:./.test(String(track.identifier || ""));
+}
+
+function isForeignCantus(track, userId) {
+    return isCantusTrack(track) && String(track.identifier).split(":")[1] !== String(userId);
+}
+
 // Patch 45: Full history page - each song once, newest first. Asks for the
 // first 100 songs of a scope ("user" or "guild"); "Load more" the next 100.
 function openFullHistory(player, scope) {
@@ -401,8 +414,7 @@ const methods = {
         let state;
         if (data.connected) {
             const songs = data.songs != null ? ` (${text(data.songs)} songs)` : "";
-            const how = data.mode === "token" ? "with your personal token" : "linked from Discord";
-            state = `Connected as <b>${text(data.username || "?")}</b>${songs} - ${how}`;
+            state = `Connected as <b>${text(data.username || "?")}</b>${songs}`;
             if (data.problem === "token_revoked") state += "<br>That token isn't valid any more - paste a new one.";
         } else {
             state = "Not connected - paste your personal token below.";
@@ -413,27 +425,18 @@ const methods = {
         // Saved secrets only ever arrive as a masked hint, shown as
         // placeholder text: there's nothing in the field to read or copy.
         const masked = (hint) => (hint ? `${hint.slice(0, 4)}••••••••${hint.slice(-4)} (saved - paste a new one to replace)` : "");
-        $("#cantus-token").attr("placeholder", (data.mode === "token" && masked(data.tokenHint)) || "cfa_…");
+        $("#cantus-token").attr("placeholder", (data.connected && masked(data.tokenHint)) || "cfa_…");
 
-        const admin = data.admin;
-        const shared = (admin && admin.url) || data.defaultServer || "";
+        // Members just paste a token: the server is the default the owner,
+        // DJs or server admins saved, read-only for everyone else.
         const $server = $("#cantus-server");
-        // Fill it in when the section opens; a reply to Save keeps what was
+        const locked = !data.canSetServer && !!data.defaultServer;
+        // Filled in when the section opens; a reply to Save keeps what was
         // typed (an error must not wipe the address someone just entered).
-        if (!$server.is(":focus") && (data.message === undefined || !$server.val() || (!admin && data.defaultServer))) {
-            $server.val((data.mode === "token" && data.server) || shared);
+        if (!$server.is(":focus") && (data.message === undefined || !$server.val() || locked)) {
+            $server.val((data.connected && data.server) || data.defaultServer || "");
         }
-        // Members just paste a token: the server is the one the admins saved.
-        $server.prop("readonly", !admin && !!data.defaultServer);
-
-        $("#cantus-app-row, #cantus-app-howto, #cantus-admin-state").toggle(!!admin);
-        if (admin) {
-            $("#cantus-app-key").attr("placeholder", masked(admin.keyHint) || "cfk_…");
-            $("#cantus-admin-state").html(admin.configured ? "App key saved - /cantus link is on for everyone." : "No app key yet - /cantus link is off.");
-            $("#cantus-app-remove").toggle(!!admin.configured);
-        } else {
-            $("#cantus-app-remove").hide();
-        }
+        $server.prop("readonly", locked);
 
         $("#cantus-message").removeClass("error").text("");
         if (data.message !== undefined) $("#cantus-message").toggleClass("error", data.ok === false).text(data.message);
@@ -1895,7 +1898,9 @@ class Player {
             this.queue
                 .slice(0, historyEnd)
                 .reverse()
-                .map((track) => buildQueueTrackHtml(track))
+                // Patch 46: other people's Cantus songs stay hidden (kept in
+                // the DOM so the index-based History actions still line up).
+                .map((track) => (isForeignCantus(track, this.userId) ? buildQueueTrackHtml(track).replace("<div ", '<div style="display: none" data-private="cantus" ') : buildQueueTrackHtml(track)))
                 .join("");
         $("#history-queue").html(
             historyHtml ||

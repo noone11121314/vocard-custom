@@ -30,13 +30,13 @@ technical write-up (cause, fix, files, tests) is in
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
-- Play your own songs and playlists from Cantus Flaccus: connect once
-  (dashboard Settings -> Cantus with your server and a personal token, or
-  `/cantus link` and press Allow on Cantus), then `/cantus play` (search as
-  you type) and `/cantus playlist`. Songs show their real title, artist and cover,
-  keep working after restarts and from history, and are evened out in
-  volume like the rest. A song that can't be played is skipped with a
-  short note. (46)
+- Play your own songs and playlists from Cantus Flaccus: paste your
+  personal Cantus token once in the dashboard (Settings -> Cantus), then
+  `/cantus play` (search as you type) and `/cantus playlist`. Songs show
+  their real title, artist and cover, keep working after restarts, and are
+  evened out in volume like the rest. Your Cantus songs stay yours: others
+  only see them while they're queued (and can still move or skip them),
+  never in history, and can't re-queue or save them. (46)
 - The bot leaves about 10 seconds after it's left alone in its voice
   channel (adjustable: `timer_settings.alone_leave`); 24/7 mode pauses
   instead. (44)

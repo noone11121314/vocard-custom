@@ -51,7 +51,7 @@
     },
     "cantus": {
         "url": "",
-        "app_key": ""
+        "dashboard_url": ""
     },
     "timer_settings": {
         "bot_activity_update": 600,

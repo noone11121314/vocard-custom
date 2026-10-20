@@ -1650,18 +1650,12 @@ $(document).ready(function () {
             // Patch 46: Cantus connect / disconnect. The token field is
             // cleared as soon as it's sent; it's never filled back in.
             if ($target.closest("#cantus-save").length) {
-                // One Save for the whole form: whatever was typed is sent once,
-                // then the key/token fields are cleared (never filled back in).
+                // The token is sent once, then cleared (never filled back in).
                 const server = $("#cantus-server").val().trim()
-                const appKey = $("#cantus-app-key").val().trim()
                 const token = $("#cantus-token").val().trim()
-                $("#cantus-app-key, #cantus-token").val("")
+                $("#cantus-token").val("")
                 $("#cantus-message").removeClass("error").text("Checking…")
-                return player.send({ op: "cantusSave", server, appKey, token })
-            }
-            if ($target.closest("#cantus-app-remove").length) {
-                $("#cantus-message").removeClass("error").text("Removing…")
-                return player.send({ op: "cantusAppRemove" })
+                return player.send({ op: "cantusSave", server, token })
             }
             if ($target.closest("#cantus-disconnect").length) {
                 $("#cantus-message").removeClass("error").text("Disconnecting…")
@@ -1957,6 +1951,15 @@ $(document).ready(function () {
     })
 
     function buildContextMenu(event, buttonNames, options) {
+        // Patch 46: a Cantus song never offers "Copy link", and someone else's
+        // Cantus song can't be queued again or saved by you.
+        try {
+            const t = options && options.selectedTrackId ? decode(options.selectedTrackId) : null
+            if (isCantusTrack(t)) {
+                const foreignOnly = ["playNow", "playNext", "addToQueue", "playlistAddTrack", "getRecommendation"]
+                buttonNames = buttonNames.filter((n) => n !== "copyLink" && !(isForeignCantus(t, player.userId) && foreignOnly.includes(n)))
+            }
+        } catch (error) {}
         const buttonActions = {
             playNow: createActionElement("play_arrow", localeTexts.context.playNow, "context-play-now"),
             playNext: createActionElement("redo", localeTexts.context.playNext, "context-play-next"),

@@ -1,14 +1,13 @@
-// Real-Chromium check of Settings -> Cantus (Patch 46), one form:
-// a member sees only the token field (server read-only, the admins' one);
-// the owner/DJs/admins also see the app key field; Save sends what was typed
-// once and clears the secret fields; saved secrets come back only as a masked
-// hint in the placeholder - never as a value that can be read or copied;
-// errors show in red; Disconnect / Remove app key work. A fake websocket plays
+// Real-Chromium check of Settings -> Cantus (Patch 46), personal tokens
+// only: a member just pastes a token (the server is the default an admin
+// saved, read-only); the owner/DJs/admins can edit the server; there's no
+// app key field; Save sends the token once and clears it; a saved token comes
+// back only as a masked hint in the placeholder - never as a value that can be
+// read or copied; errors show in red; Disconnect works. A fake websocket plays
 // the dashboard server + bot. Run via browser_check.sh.
 const fs = require("fs");
 const { chromium } = require("playwright");
 const TOKEN = "cfa_supersecrettoken9876";
-const KEY = "cfk_appkeysecret4321";
 
 async function open(browser, html, isAdmin, appConfigured) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -17,7 +16,7 @@ async function open(browser, html, isAdmin, appConfigured) {
   await page.addInitScript(({ isAdmin, appConfigured }) => {
     window.__sent = [];
     let connected = false;
-    let appKey = appConfigured ? "cfk_existing1111" : null;
+    let appKey = appConfigured ? "default-saved" : null;
     window.WebSocket = class {
       constructor() {
         this.readyState = 0;
@@ -27,22 +26,19 @@ async function open(browser, html, isAdmin, appConfigured) {
       send(raw) {
         const m = JSON.parse(raw);
         window.__sent.push(m);
-        const hint = (k) => `${k.slice(0, 4)}…${k.slice(-4)}`;
         const status = (extra) => this.push({ op: "cantusStatus", userId: "111", defaultServer: appKey ? "https://cantus.example" : "",
           ...(connected ? { connected: true, mode: "token", server: "https://cantus.example", username: "babab1t", songs: 272, tokenHint: "cfa_…9876" } : { connected: false }),
-          ...(isAdmin ? { admin: { configured: !!appKey, url: appKey ? "https://cantus.example" : "", keyHint: appKey ? hint(appKey) : "" } } : {}),
+          canSetServer: isAdmin,
           ...extra });
         if (m.op === "updateSelectedBot") this.push({ op: "initUser", userId: "111", data: { playlist: {}, inbox: [] } });
         if (m.op === "cantusStatus") status({});
         if (m.op === "cantusSave") {
-          if (m.token === "cfa_bad" || m.appKey === "cfk_bad") return status({ ok: false, message: m.appKey ? "Cantus didn't accept that app key." : "That token isn't valid (or was revoked)." });
-          const done = [];
-          if (m.appKey && isAdmin) { appKey = m.appKey; done.push("App key saved"); }
-          if (m.token) { connected = true; done.push("connected as babab1t"); }
-          status({ ok: true, message: done.join("; ") + "." });
+          if (m.token === "cfa_bad") return status({ ok: false, message: "That token isn't valid (or was revoked)." });
+          if (isAdmin && m.server) appKey = "default-saved";
+          connected = true;
+          status({ ok: true, message: "Connected as babab1t." });
         }
         if (m.op === "cantusDisconnect") { connected = false; status({ ok: true, message: "Disconnected." }); }
-        if (m.op === "cantusAppRemove") { appKey = null; status({ ok: true, message: "App key removed." }); }
       }
       close() {}
     };
@@ -67,13 +63,9 @@ const ui = (page) => page.evaluate(() => ({
   error: $("#cantus-message").hasClass("error"),
   server: $("#cantus-server").val(),
   serverReadonly: $("#cantus-server").prop("readonly"),
-  appRow: $("#cantus-app-row").is(":visible"),
-  appKeyValue: $("#cantus-app-key").val(),
-  appKeyPlaceholder: $("#cantus-app-key").attr("placeholder"),
   tokenValue: $("#cantus-token").val(),
   tokenPlaceholder: $("#cantus-token").attr("placeholder"),
   disconnect: $("#cantus-disconnect").is(":visible"),
-  remove: $("#cantus-app-remove").is(":visible"),
 }));
 
 (async () => {
@@ -85,7 +77,7 @@ const ui = (page) => page.evaluate(() => ({
   // A member, after an admin set things up.
   let page = await open(browser, html, false, true);
   let st = await ui(page);
-  report(st.visible && !st.appRow, "a member sees no app key field");
+  report(st.visible && (await page.locator("#cantus-app-key").count()) === 0, "a member sees just the token field");
   report(st.server === "https://cantus.example" && st.serverReadonly, `a member's server is the admins' one, read-only (${st.server})`);
   report(st.state.includes("Not connected"), `not connected at first ("${st.state}")`);
   await page.fill("#cantus-token", "cfa_bad");
@@ -109,38 +101,19 @@ const ui = (page) => page.evaluate(() => ({
   report(page.__errors.length === 0, `member: no page errors${page.__errors.length ? ": " + page.__errors.join(" | ") : ""}`);
   await page.close();
 
-  // A DJ/admin, before anything is set up.
+  // The bot's owner / a DJ / a server admin: the server is editable (it's
+  // the default for everyone), and there is no app key field at all.
   page = await open(browser, html, true, false);
   st = await ui(page);
-  report(st.appRow && !st.serverReadonly && st.appKeyPlaceholder === "cfk_…", "an admin sees server, app key and token fields");
+  report(!st.serverReadonly && (await page.locator("#cantus-app-key").count()) === 0, "an admin can edit the server; there's no app key field");
   await page.fill("#cantus-server", "https://cantus.example");
-  await page.fill("#cantus-app-key", "cfk_bad");
-  await page.click("#cantus-save");
-  await page.waitForTimeout(300);
-  st = await ui(page);
-  report(st.error && st.message.includes("didn't accept"), `a wrong app key shows an error ("${st.message}")`);
-  await page.fill("#cantus-app-key", KEY);
   await page.fill("#cantus-token", TOKEN);
   await page.click("#cantus-save");
   await page.waitForTimeout(300);
   sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "cantusSave").pop());
   st = await ui(page);
-  report(sent.appKey === KEY && sent.token === TOKEN && sent.server === "https://cantus.example", "one Save sends server, app key and token");
-  report(st.appKeyValue === "" && st.tokenValue === "", "both secret fields are cleared after sending");
-  report(st.appKeyPlaceholder.startsWith("cfk_••••") && st.appKeyPlaceholder.includes("4321") && st.remove, `saved app key shown masked ("${st.appKeyPlaceholder}")`);
-  report(!(await page.content()).includes(KEY) && !(await page.content()).includes(TOKEN), "neither secret appears anywhere on the page");
-  await page.close();
-
-  // Another admin later: everything already filled in, key still hidden.
-  page = await open(browser, html, true, true);
-  st = await ui(page);
-  report(st.server === "https://cantus.example" && st.appKeyValue === "" && st.appKeyPlaceholder.includes("1111"), `another admin sees it filled in, key masked ("${st.appKeyPlaceholder}")`);
-  const copied = await page.evaluate(() => { const el = document.getElementById("cantus-app-key"); el.select(); return el.value + (window.getSelection().toString() || ""); });
-  report(copied === "", "there's nothing in the app key field to select or copy");
-  await page.click("#cantus-app-remove");
-  await page.waitForTimeout(300);
-  st = await ui(page);
-  report(!st.remove && st.appKeyPlaceholder === "cfk_…", "Remove app key works");
+  report(sent.server === "https://cantus.example" && sent.token === TOKEN && !("appKey" in sent), "Save sends the server and token only");
+  report(st.tokenValue === "" && !(await page.content()).includes(TOKEN), "the token is cleared and appears nowhere on the page");
   report(page.__errors.length === 0, `admin: no page errors${page.__errors.length ? ": " + page.__errors.join(" | ") : ""}`);
   await browser.close();
   process.exit(failures ? 1 : 0);
