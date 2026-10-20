@@ -2521,6 +2521,83 @@ song with play count, grouping, Load more, tabs, click to add).
 
 ---
 
+## Patch 46 — Cantus Flaccus: play your own songs and playlists (issue #1)
+
+User/issue #1: let Vocard play a member's own library from Cantus Flaccus
+(their lossless music server) through its new API. Cantus never calls Vocard.
+
+**Setup:** `settings.json` -> `"cantus": {"url", "app_key"}` (`Config.cantus`).
+The app key is the bot's one credential (a Cantus admin makes it); without
+both, every `/cantus` command just says Cantus isn't set up. Every API call
+sends `Authorization: Bearer <app key>` + `X-Cantus-Discord-User: <id>`;
+Cantus answers for that Discord user's linked account, `409 not_linked` if
+none. No per-user Cantus credential is stored in Vocard (the issue's first
+plan, personal tokens, was replaced by pairing).
+
+**Commands** (`cogs/cantus.py`, slash only, account replies ephemeral):
+- `/cantus link`: `POST /link/start` -> sends the Cantus link (valid 10
+  minutes), polls `GET /link/{code}` every 3s until "linked" / "expired",
+  then says which Cantus account it linked. `/cantus unlink`: `DELETE /link`.
+- `/cantus play <song>`: autocomplete from `GET /songs?q=` (25 matches,
+  "Title - Artists"); a picked entry is the song id, fetched through its
+  `stream` endpoint (the only per-song endpoint); free text is searched.
+- `/cantus playlist <name>`: autocomplete from `GET /playlists` (with song
+  counts); queues every song of `GET /playlists/{id}` in order.
+- `/cantus help`: the linking steps.
+
+**Tracks** (`voicelink/cantus.py`): a queued Cantus song is a Track we
+encode ourselves (`build_track`), `sourceName "cantus"`, the song's real
+title / artists / length / cover / ISRC, `identifier
+"cantus:<discord id>:<song id>"` (whose library it came from) and a unique
+`uri` per song (dedupe and the Home lists key on it). It holds **no play
+link**: they're signed and expire in 12h, which would break a song waiting
+in a long queue, resumed after a restart (session restore) or replayed from
+History / Full history. `Player.play()` instead calls
+`cantus.resolve_for_play()` right before the song starts: it fetches a
+link (one is reused for up to 6h), has Lavalink load it with the http
+source, and plays that, while queue, history and dashboards keep the
+metadata track (same split as YouTube's direct resolve).
+
+**Whose library:** the requester's first; if their library doesn't have
+the song (or they aren't linked), the owner's, but only while the owner is a
+member of this server - so a friend can replay the owner's song from this
+server's history, and nobody can reach a library from outside it.
+
+**Skipping:** `CantusUnavailable` from `play()` is caught in `do_next`, which
+posts "Skipped **<song>**: <reason>" (gone in 30s) and moves on, without the
+5s error pause. Reasons: not linked, app key refused (401/403), no longer in
+the library (404), Cantus unreachable, file couldn't be loaded (a reused link
+that fails is replaced once first).
+
+**No audio cache** (user's call): Cantus serves its own files with seeking,
+so songs stream straight from it; nothing is written to `stream_cache`.
+**Loudness:** an unmeasured song plays at the stream cache's typical gain
+(Patch 35); its first play also measures it in the background (ffmpeg
+`ebur128`, low priority, reading the link once) and stores the gain in Mongo
+`CantusGains`, so later plays are normalized exactly like YouTube songs.
+Suggested to Cantus: ship a ReplayGain value per song, which would remove
+that one extra read.
+
+**Credentials never logged:** the app key isn't; play links aren't (the
+measurement logs `cantus:<song id>`, not the URL). Lavalink's own request log
+does contain the link it was handed (one song, 12h) - unavoidable.
+
+**Status:** built and unit-tested against a fake Cantus; the pairing
+endpoints and app key are pending on the Cantus side, so it isn't deployed
+or tried against the real server yet.
+
+Tests: new `tests/unit/test_patch46_cantus.py` (18): headers on every call,
+409 not-linked, unconfigured makes no calls, search limit/offset, pairing
+pending -> linked and expired/unknown codes, unlink forgets cached links,
+queued track metadata with no link inside, song lookup, link loaded into
+Lavalink and reused, stale link replaced once, a friend's replay uses the
+owner's library, the owner's only while in the server, removed song and
+revoked key skip reasons, typical vs measured gain, the measurement never
+logs the link, `Player.play()` sends the fresh track and keeps the metadata
+track as current.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

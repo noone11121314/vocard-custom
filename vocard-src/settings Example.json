@@ -49,6 +49,10 @@
         "secure": false,
         "enable": false
     },
+    "cantus": {
+        "url": "",
+        "app_key": ""
+    },
     "timer_settings": {
         "bot_activity_update": 600,
         "inactive_player_cleanup": 600,

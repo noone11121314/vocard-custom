@@ -55,6 +55,7 @@ from .exceptions import VoicelinkException, FilterInvalidArgument, TrackInvalidP
 from .placeholders import PlayerPlaceholder
 from .queue import Queue, QUEUE_TYPES
 from .mongodb import MongoDBHandler
+from . import cantus
 from .language import LangHandler
 from .views import InteractiveController
 from .utils import format_ms, dispatch_message
@@ -690,6 +691,14 @@ class Player(VoiceProtocol):
                 start = track.position
             try:
                 await self.play(track, start=start)
+            except cantus.CantusUnavailable as e:
+                # Patch 46: a Cantus song that can't be played - say why, go on.
+                self._loading_track = None
+                try:
+                    await self.context.channel.send(f"Skipped **{track.title}**: {e}", delete_after=30)
+                except Exception:
+                    pass
+                return await self.do_next()
             except Exception as e:
                 self._logger.error(f"Something went wrong while playing music in {self.guild.name}({self.guild.id})", exc_info=e)
                 await asyncio.sleep(5)
@@ -1016,6 +1025,12 @@ class Player(VoiceProtocol):
             # Still defaults to neutral (1.0) if resolution fell back to
             # streaming (download failed) or measurement itself failed.
             self._loudness_gain = await self._node.get_track_gain(track.identifier)
+        elif track.source == cantus.SOURCE:
+            # Patch 46: a fresh play link from Cantus (queued Cantus songs
+            # never hold one - they expire). CantusUnavailable propagates to
+            # do_next, which skips the song with a note.
+            encoded_track = await cantus.resolve_for_play(self, track)
+            self._loudness_gain = await cantus.gain(cantus.parse_identifier(track.identifier)[1])
         else:
             # Non-youtube tracks (Spotify/SoundCloud/a Discord attachment)
             # are never disk-cached, so there's nothing to measure - always

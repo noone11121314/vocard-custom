@@ -87,6 +87,23 @@ self-reloading dashboard pages, and no secrets in git or the image.
 - What changed, in plain language: **[`CHANGELOG.md`](CHANGELOG.md)**
 - Cause, fix, files and tests for each patch: **[`docs/local-patches.md`](docs/local-patches.md)**
 
+## Cantus Flaccus
+
+Members can play their own songs and playlists from a Cantus Flaccus server
+(`/cantus play`, `/cantus playlist`). Setup: a Cantus admin creates an app
+(Admin -> Apps -> New app "Vocard"), and its key goes in `settings.json`:
+
+```json
+"cantus": {"url": "https://<your Cantus server>", "app_key": "<app key>"}
+```
+
+Never commit it (`settings.json` is ignored). Each member then runs
+`/cantus link`, opens the link the bot sends (valid 10 minutes) while
+signed in to Cantus, and presses **Allow**. `/cantus unlink` (or Cantus ->
+Account -> Connected apps) disconnects; `/cantus help` repeats the steps.
+Songs stream straight from Cantus (not cached); see Patch 46 in
+[`docs/local-patches.md`](docs/local-patches.md).
+
 ## Testing
 
 ```bash

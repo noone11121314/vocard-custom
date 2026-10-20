@@ -329,6 +329,19 @@ class MongoDBHandler:
         return [doc async for doc in cursor]
 
     @classmethod
+    async def set_cantus_gain(cls, song_id: str, gain: float) -> None:
+        """Patch 46: a Cantus song's measured loudness gain."""
+        if cls._db is None:
+            return
+        await cls._db["CantusGains"].update_one({"_id": song_id}, {"$set": {"gain": float(gain)}}, upsert=True)
+
+    @classmethod
+    async def get_cantus_gains(cls) -> Dict[str, float]:
+        if cls._db is None:
+            return {}
+        return {d["_id"]: d["gain"] async for d in cls._db["CantusGains"].find({}) if isinstance(d.get("gain"), (int, float))}
+
+    @classmethod
     async def get_history_songs(cls, query: Dict[str, Any], skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """One entry per song (video_id): its latest event (track_id, kind,
         guild_id, at) plus how many times it was played / added. Newest

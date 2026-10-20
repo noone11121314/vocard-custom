@@ -99,6 +99,8 @@ class Config:
         self.ipc_client: Dict[str, Union[str, bool, int]] = settings.get("ipc_client", {})
         self.playlist_settings: Dict[str, Union[str, int]] = settings.get("playlist_settings", {})
         self.timer_settings: Dict[str, int] = settings.get("timer_settings", {})
+        # Patch 46: {"url": ..., "app_key": ...} for voicelink/cantus.py.
+        self.cantus: Dict[str, str] = settings.get("cantus", {})
         self.version: str = settings.get("version", "")
         
         self.initialized = True
