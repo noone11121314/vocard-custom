@@ -2736,6 +2736,35 @@ every box).
 
 ---
 
+## Patch 48 — "There are no nodes available" after a reboot (issue #3, application breaking)
+
+Seen after the host rebooted: the dashboard and every play command said
+"There are no nodes available." and nothing played until the bot was
+restarted by hand. All containers start together. The bot tried Lavalink at
+16:16:27, but Lavalink was only ready at 16:16:32. `Listeners.start_nodes`
+(cogs/listeners.py) made one attempt and only logged the failure. The
+reconnect loop in `Node._listen` (pool.py) only covers a node that drops
+after it was connected, so a node that was never reached stayed missing.
+
+**Fix:** `start_nodes` now runs one `_start_node` task per node. Each task
+keeps trying until its node connects, waiting 2 s and doubling up to 30 s.
+The first failure is logged as an error, later ones as info, and success
+after failures logs how many tries it took. A node already in the pool
+counts as connected. Each node has its own task, so a node that is down
+doesn't hold up the others. `restore_last_session_players` waits for the
+first connected node (`_node_ready`), so the queue from before the reboot
+comes back once Lavalink is up instead of failing. `NodePool.create_node`
+closes the `aiohttp` session of a failed attempt so the retries don't leak
+sessions (only when it made the session itself).
+
+Tests: 7 unit tests (`test_issue3_node_retry.py`): retries until connected,
+backoff capped at 30 s, no wait when the first try works, already in the
+pool counts as ready, a down node doesn't hold up another, the restore
+waits for a node, and a failed `create_node` closes its session and isn't
+added to the pool.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

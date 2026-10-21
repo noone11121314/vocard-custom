@@ -81,4 +81,7 @@ Cantus tab in the dashboard - **v0.6.0**.
 **21 Oct - one code.** Connect to Cantus with a single connect code instead
 of two fields (issue #2); a Cantus tag on songs, recommendations for Cantus
 songs, and no more login autofill on the search boxes (47) - **v0.7.0**.
-Release tags and this history added.
+Release tags and this history added. Later, after a host reboot,
+the dashboard said "There are no nodes available": the bot had started a few
+seconds before Lavalink, tried once and given up. It now keeps trying until
+Lavalink is up (48, issue #3) - **v0.7.1**.

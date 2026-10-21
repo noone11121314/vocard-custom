@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.7.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.1) | 2026-10-21 | 48 (#3) | Fix: no music after a reboot ("There are no nodes available") |
 | [v0.7.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.0) | 2026-10-21 | 46 (#2), 47 | Cantus connect code, Cantus tag, recommendations for Cantus songs, no login autofill |
 | [v0.6.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.6.0) | 2026-10-20 | 46 (#1) | Cantus Flaccus: your own songs and playlists, private libraries, Cantus tab |
 | [v0.5.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.5.0) | 2026-10-20 | 45 | Full history, recovered back to 24 Sep |
@@ -128,6 +129,10 @@ grouped by topic instead.
   labels fixed. (3, 4)
 
 ## Reliability and operations
+- After a reboot the bot keeps trying Lavalink until it's up, instead of
+  giving up after one try and showing "There are no nodes available" until
+  someone restarted it. The queue from before the reboot comes back once it
+  connects. (48, issue #3)
 - Every song's route is logged (`[CacheRoute]`), production bot logs are
   kept across redeploys (`./logs`), and `./cache_report.sh` shows per day
   how many songs were cached vs streamed and which route cached them. (37)

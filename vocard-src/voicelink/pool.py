@@ -768,7 +768,14 @@ class NodePool:
             session=session, resume_key=resume_key, logger=logger
         )
 
-        await node.connect()
+        try:
+            await node.connect()
+        except Exception:
+            # Issue #3: start_nodes retries, so don't leave each failed
+            # try's own session open.
+            if session is None:
+                await node._session.close()
+            raise
         cls._nodes[node._identifier] = node
         return node
 

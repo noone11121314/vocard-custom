@@ -38,21 +38,46 @@ class Listeners(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.voicelink = voicelink.NodePool()
+        self._node_ready = asyncio.Event()
 
         bot.loop.create_task(self.start_nodes())
         bot.loop.create_task(self.restore_last_session_players())
-        
+
+    # Issue #3: after a reboot the bot can start before Lavalink is ready.
+    # One failed try used to leave it with no node ("There are no nodes
+    # available") until a manual restart - Node._listen only reconnects a
+    # node that was connected before - so keep trying each node until it is.
+    NODE_RETRY_FIRST = 2
+    NODE_RETRY_MAX = 30
+
     async def start_nodes(self) -> None:
-        """Connect and intiate nodes."""
-        for n in Config().nodes.values():
+        """Connect and intiate nodes, each in its own task so one node that's
+        down doesn't hold up the others."""
+        await asyncio.gather(*(self._start_node(n) for n in Config().nodes.values()))
+
+    async def _start_node(self, n: dict) -> None:
+        delay, tries = self.NODE_RETRY_FIRST, 0
+        while True:
             try:
                 await self.voicelink.create_node(bot=self.bot, **n)
+                if tries:
+                    func.logger.info(f'Node {n["identifier"]} connected after {tries} failed tries.')
+                self._node_ready.set()
+                return
+            except voicelink.NodeCreationError:
+                self._node_ready.set()  # already in the pool
+                return
             except Exception as e:
-                func.logger.error(f'Node {n["identifier"]} is not able to connect! - Reason: {e}')
+                tries += 1
+                log = func.logger.error if tries == 1 else func.logger.info
+                log(f'Node {n["identifier"]} is not able to connect! - Reason: {e} - retrying in {delay}s')
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, self.NODE_RETRY_MAX)
 
     async def restore_last_session_players(self) -> None:
         """Re-establish connections for players from the last session."""
         await self.bot.wait_until_ready()
+        await self._node_ready.wait()  # Issue #3: players can't join without a node
         players = func.open_json(Config.LAST_SESSION_FILE_DIR)
         if not players:
             return
