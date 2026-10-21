@@ -60,25 +60,25 @@ instant buttons (14, 16); "Recently added" (17); the queue survives a restart
 by you" (21); sync between several dashboards (22, 26); one shared 0-100
 volume shown on the slider (27, 28, 31); self-reloading pages (29); secrets
 kept out of git and the image, and the project put on GitHub (30); the DJ-role
-fix and settings that apply live (32). **Release v1.0.0.** Then gentler
+fix and settings that apply live (32). **Release v0.1.0.** Then gentler
 caching (33), integration / fuzz / real-browser test suites and the bugs they
 found (34, 35), why some songs wouldn't download (36), cache route logging
-(37) - **v1.1.0** - and the queue panel: History fixes (38-40), Shuffle (41),
-the speaker icon mutes (42) - **v1.2.0**.
+(37) - **v0.2.0** - and the queue panel: History fixes (38-40), Shuffle (41),
+the speaker icon mutes (42) - **v0.3.0**.
 
 **19 Oct - two tabs.** Two tabs (or PC + phone) kicked each other off in a
 reload loop; the dashboard now runs in several at once, and rate limits stay
 quiet (43).
 
 **20 Oct - history and Cantus.** The bot leaves ~10 s after it's left alone;
-history follows each person across servers, shown first (44) - **v1.3.0**.
+history follows each person across servers, shown first (44) - **v0.4.0**.
 Full history: every song played or added, once each, rebuilt from the logs
-back to 24 Sep (45) - **v1.4.0**. Cantus Flaccus (issue #1): play your own
+back to 24 Sep (45) - **v0.5.0**. Cantus Flaccus (issue #1): play your own
 lossless library through Vocard (46). It went through pairing and an admin
 app key before settling on personal tokens and private libraries, plus a
-Cantus tab in the dashboard - **v2.0.0**.
+Cantus tab in the dashboard - **v0.6.0**.
 
 **21 Oct - one code.** Connect to Cantus with a single connect code instead
 of two fields (issue #2); a Cantus tag on songs, recommendations for Cantus
-songs, and no more login autofill on the search boxes (47) - **v2.1.0**.
+songs, and no more login autofill on the search boxes (47) - **v0.7.0**.
 Release tags and this history added.

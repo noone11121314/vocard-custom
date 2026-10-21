@@ -7,7 +7,9 @@ technical write-up (cause, fix, files, tests) is in
 
 ## Releases
 
-Each release is a git tag with notes (what changed, and its commits) on the
+This fork has its own version numbers, still 0.x - it has drifted far from
+upstream Vocard (based on v2.7.3) and isn't a stable public release. Each
+release is a git tag with notes (what changed, and its commits) on the
 [releases page](https://github.com/noone11121314/vocard-custom/releases).
 The day-by-day story since the first install on 9 Sep, including the work
 before git, is in [`docs/history.md`](docs/history.md). Below, changes are
@@ -15,13 +17,13 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
-| [v2.1.0](https://github.com/noone11121314/vocard-custom/releases/tag/v2.1.0) | 2026-10-21 | 46 (#2), 47 | Cantus connect code, Cantus tag, recommendations for Cantus songs, no login autofill |
-| [v2.0.0](https://github.com/noone11121314/vocard-custom/releases/tag/v2.0.0) | 2026-10-20 | 46 (#1) | Cantus Flaccus: your own songs and playlists, private libraries, Cantus tab |
-| [v1.4.0](https://github.com/noone11121314/vocard-custom/releases/tag/v1.4.0) | 2026-10-20 | 45 | Full history, recovered back to 24 Sep |
-| [v1.3.0](https://github.com/noone11121314/vocard-custom/releases/tag/v1.3.0) | 2026-10-20 | 43–44 | Several tabs at once, leave when alone, personal history first |
-| [v1.2.0](https://github.com/noone11121314/vocard-custom/releases/tag/v1.2.0) | 2026-10-18 | 38–42 | Queue panel: History fixes, Shuffle, mute |
-| [v1.1.0](https://github.com/noone11121314/vocard-custom/releases/tag/v1.1.0) | 2026-10-18 | 33–37 | Gentler caching, download fixes, test suites |
-| [v1.0.0](https://github.com/noone11121314/vocard-custom/releases/tag/v1.0.0) | 2026-10-18 | 1–32 | The customized Vocard deployment |
+| [v0.7.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.0) | 2026-10-21 | 46 (#2), 47 | Cantus connect code, Cantus tag, recommendations for Cantus songs, no login autofill |
+| [v0.6.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.6.0) | 2026-10-20 | 46 (#1) | Cantus Flaccus: your own songs and playlists, private libraries, Cantus tab |
+| [v0.5.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.5.0) | 2026-10-20 | 45 | Full history, recovered back to 24 Sep |
+| [v0.4.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.4.0) | 2026-10-20 | 43–44 | Several tabs at once, leave when alone, personal history first |
+| [v0.3.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.3.0) | 2026-10-18 | 38–42 | Queue panel: History fixes, Shuffle, mute |
+| [v0.2.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.2.0) | 2026-10-18 | 33–37 | Gentler caching, download fixes, test suites |
+| [v0.1.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.1.0) | 2026-10-18 | 1–32 | The customized Vocard deployment |
 
 ## Permissions and settings
 - Members with the server's DJ role are no longer refused queue edits when
