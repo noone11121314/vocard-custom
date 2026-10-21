@@ -77,13 +77,15 @@ grep "\[CacheRoute\]" logs/vocard.log  # every download / fallback / stream deci
 
 ## Local Patches
 
-37 changes on top of upstream Vocard and its dashboard. Highlights: every
+47 changes on top of upstream Vocard and its dashboard. Highlights: every
 song is downloaded to a local cache before it plays (with an
 invidious-companion fallback when YouTube blocks yt-dlp), per-song loudness
 normalization, a shared 0-100 volume, dashboards kept in sync between
 everyone in the channel, instant controls, queue survives restarts,
 self-reloading dashboard pages, and no secrets in git or the image.
 
+- How it got here, day by day since 9 Sep: **[`docs/history.md`](docs/history.md)**
+- Releases, with notes and commits: **[releases page](https://github.com/noone11121314/vocard-custom/releases)**
 - What changed, in plain language: **[`CHANGELOG.md`](CHANGELOG.md)**
 - Cause, fix, files and tests for each patch: **[`docs/local-patches.md`](docs/local-patches.md)**
 
