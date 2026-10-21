@@ -181,7 +181,10 @@ class PlayerPlaceholder:
 
             try:
                 # Replace variable placeholders with their values
-                expression = re.sub(r'@@(.*?)@@', lambda x: "'" + variables.get(x.group(1), '') + "'", expression)
+                # Patch 49: repr() quotes the value safely - wrapping it in
+                # '...' broke on any title with an apostrophe ("I'm"), the
+                # eval failed and the voice channel status came out empty.
+                expression = re.sub(r'@@(.*?)@@', lambda x: repr(str(variables.get(x.group(1), ''))), expression)
                 expression = re.sub(r"'(\d+)'", lambda x: str(int(x.group(1))), expression)
                 expression = re.sub(r"'(\d+)'\s*([><=!]+)\s*(\d+)", lambda x: f"{int(x.group(1))} {x.group(2)} {int(x.group(3))}", expression)
 

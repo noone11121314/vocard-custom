@@ -84,4 +84,6 @@ songs, and no more login autofill on the search boxes (47) - **v0.7.0**.
 Release tags and this history added. Later, after a host reboot,
 the dashboard said "There are no nodes available": the bot had started a few
 seconds before Lavalink, tried once and given up. It now keeps trying until
-Lavalink is up (48, issue #3) - **v0.7.1**.
+Lavalink is up (48, issue #3) - **v0.7.1**. The voice channel status stayed empty for
+songs with an apostrophe in the title, such as "I'm" (49, issue #4) -
+**v0.7.2**.

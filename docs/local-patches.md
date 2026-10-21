@@ -2765,6 +2765,30 @@ added to the pool.
 
 ---
 
+## Patch 49 — Voice channel status empty for titles with an apostrophe (issue #4)
+
+User: "the current playing song, why it not showing on discord channel
+status". The song was "Kiss the rails, girls, I'm going home". The status
+template (`default_voice_status_template`) has a condition,
+`{{@@track_name@@ != 'None' ?? ... // ...}}`. `PlayerPlaceholder.replace`
+(placeholders.py, stock Vocard) put each `@@value@@` inside `'...'` and ran
+the condition through `eval`. An apostrophe in the title made that invalid
+code, the error was swallowed, that part of the template became `""`, and
+`update_voice_status` set an empty status. That clears it, so nothing showed
+and nothing was logged. Every `{{ ?? // }}` template had the same problem,
+and a crafted title could break out of the quotes into the expression
+(builtins were off, so the risk was limited).
+
+**Fix:** the value is quoted with `repr(str(value))`, so `'`, `"`, `\` and
+any other text stay one plain string, and the expression can't be changed.
+Numbers still compare as numbers (`'50'` is turned into `50` as before).
+
+Tests: 9 unit tests (`test_patch49_voice_status_quotes.py`): titles with
+`'`, `"`, both, a backslash and Cyrillic; "Waiting for song requests" when
+nothing plays; numeric comparisons; a title that tries to inject code.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

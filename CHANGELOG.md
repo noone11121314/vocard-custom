@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.7.2](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.2) | 2026-10-21 | 49 (#4) | Fix: voice channel status empty for titles with an apostrophe |
 | [v0.7.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.1) | 2026-10-21 | 48 (#3) | Fix: no music after a reboot ("There are no nodes available") |
 | [v0.7.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.0) | 2026-10-21 | 46 (#2), 47 | Cantus connect code, Cantus tag, recommendations for Cantus songs, no login autofill |
 | [v0.6.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.6.0) | 2026-10-20 | 46 (#1) | Cantus Flaccus: your own songs and playlists, private libraries, Cantus tab |
@@ -51,6 +52,9 @@ grouped by topic instead.
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
+- The voice channel status ("Now Playing: ...") shows every song, including
+  titles with an apostrophe like "I'm", which used to leave it empty. (49,
+  issue #4)
 - Play your own songs and playlists from Cantus Flaccus: paste the connect
   code Cantus gives you (server and token in one) once in the dashboard
   (Settings -> Cantus), then
