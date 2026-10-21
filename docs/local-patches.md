@@ -2691,6 +2691,51 @@ order, not connected -> Connect in Settings).
 
 ---
 
+## Patch 47 — Cantus tag, no login autofill on search boxes, recommendations for Cantus songs
+
+User: "a tag or something to differentiate between the Cantus song and what we
+fetch from YouTube"; "the search input field gets mistaken for username and
+password ... on my phone it asks me to autofill my account"; "the
+recommendation for similar songs isn't working - relevance YouTube search for
+them?"
+
+**Cantus tag:** a small gold "Cantus" pill in front of the artist wherever a
+song is listed - queue panel and its History, Home cards, playlist and Full
+history rows, the Cantus tab - and on the player bar / Now playing card while
+a Cantus song plays (`cantusTagHtml` / `markCantus` in objects.js; the bar
+uses a CSS `::before` because its text is set with `.text()`). The queue
+panel's stock CSS hides every `<span>` in a card until hover, so the tag is a
+`<small>`. Recognised by the identifier (`cantus:<owner>:<song>`), since the
+page's Track class drops the source name. In Discord, Cantus gets its own
+source emoji 🎼 and colour (`settings.json` -> `sources_settings.cantus`;
+added to the live settings and the example).
+
+**Autofill:** every dashboard page lives in one document, and Settings ->
+Cantus had a `type="password"` field - so phone browsers took the search
+boxes for a login form and offered saved accounts. The connect-code box is
+now a text field masked with CSS (`-webkit-text-security: disc`; unmasked
+while empty so its placeholder reads), and the code, server and Cantus search
+boxes plus the stock header search (`#search-query`, set from action.js) carry
+`autocomplete="off"`, non-login names and the 1Password / LastPass / Bitwarden
+ignore attributes. There's no password field left on the page.
+
+**Recommendations for a Cantus song** (`Track.get_recommendations`,
+objects.py): Cantus has no "similar songs" of its own (no `TrackRecType`), so
+this used to return nothing - for the dashboard's "Recommendations" menu, the
+Home "Recommendation for today" and autoplay. Now it searches YouTube Music
+for "<artist> - <title>" (`_youtube_match_id`), takes the first YouTube match
+and returns that video's YouTube mix - the same recommendations a YouTube song
+gets - minus the match itself (the mix starts with the YouTube copy of the
+same song). No match: no recommendations, as before. YouTube songs unchanged.
+
+Tests: 3 unit tests (the search then the mix, the match left out; no match;
+YouTube songs unchanged); Chromium: `cantus_queue_check.js` +4 (tag on Cantus
+songs only, visible in the queue panel, player bar tagged only while a Cantus
+song plays), `cantus_check.js` +2 (no password field anywhere, autofill off on
+every box).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

@@ -260,6 +260,14 @@
             <div class="loader"></div>
         </div>
         <div class="main-grid-container">
+            <!-- Patch 47: the "Cantus" tag on songs from someone's Cantus library
+                 (cantusTagHtml / markCantus in objects.js). -->
+            <style>
+                .source-tag { display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1.4; padding: 0 6px; margin-right: 5px; border-radius: 999px; vertical-align: 1px; background: #c9a227; color: #1a1400; opacity: 1 !important; }
+                .masked-input { -webkit-text-security: disc; text-security: disc; }
+                .masked-input:placeholder-shown { -webkit-text-security: none; text-security: none; }
+                .is-cantus::before { content: "Cantus"; display: inline-block; font-size: 0.68rem; font-weight: 700; line-height: 1.4; padding: 0 6px; margin-right: 5px; border-radius: 999px; vertical-align: 1px; background: #c9a227; color: #1a1400; }
+            </style>
             {% include "header.html" %} {% include "menu.html" %}
             <div id="menu-overlay" class="mobile-overlay"></div>
             <div class="main-container">
@@ -548,7 +556,7 @@
                                 <div class="ct-tab" data-tab="playlists">{{ _("Playlists") }}</div>
                             </div>
                             <div id="cantus-songs-view">
-                                <input type="search" id="cantus-search" placeholder="{{ _('Search your songs') }}" autocomplete="off" />
+                                <input type="search" id="cantus-search" name="cantus-library-search" placeholder="{{ _('Search your songs') }}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
                                 <p class="ct-note" id="cantus-songs-count"></p>
                                 <div class="track-rows" id="cantus-song-list"></div>
                                 <div class="ct-action ct-more" id="cantus-load-more">{{ _("Load more") }}</div>
@@ -650,10 +658,13 @@
                              masked hint as placeholder text, so it can't be seen or copied. -->
                         <div class="cantus-fields" id="cantus-form">
                             <label for="cantus-code">{{ _("Cantus connect code") }}</label>
-                            <input type="password" id="cantus-code" placeholder="cantus+https://cfa_…@your-cantus-server" autocomplete="off" />
+                            <!-- Patch 47: a text field masked with CSS, not type="password": a
+                                 password field anywhere in this one-page dashboard made phones
+                                 treat the search boxes as a login form and offer saved accounts. -->
+                            <input type="text" id="cantus-code" name="cantus-connect-code" class="masked-input" placeholder="cantus+https://cfa_…@your-cantus-server" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
                             <div class="cantus-fields" id="cantus-server-row" style="display: none; margin-top: 0">
                                 <label for="cantus-server">{{ _("Default Cantus server (for a bare cfa_ token) - owner, DJs and server admins") }}</label>
-                                <input type="url" id="cantus-server" placeholder="https://your-cantus-server" autocomplete="off" />
+                                <input type="url" id="cantus-server" name="cantus-default-server" placeholder="https://your-cantus-server" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
                             </div>
                             <div class="cantus-actions">
                                 <div class="cantus-action primary" id="cantus-save">{{ _("Save") }}</div>

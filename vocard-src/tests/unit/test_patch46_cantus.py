@@ -693,3 +693,41 @@ def test_a_connect_code_is_never_logged():
     from voicelink.ipc.client import _redact
     assert "cfa_secret" not in _redact({"op": "cantusSave", "code": "cantus+https://cfa_secret@x.example"})
     assert "cfa_secret" not in _redact("pasted cantus+https://cfa_secret@x.example by mistake")
+
+
+# --- Patch 47: "similar songs" for a Cantus song -------------------------------------
+
+class _RecNode:
+    """Lavalink's loadtracks: a YouTube Music search, then a YouTube mix."""
+
+    def __init__(self, search_ids, mix_ids):
+        self._available = True
+        self.bot = MagicMock()
+        self.queries = []
+        self.search_ids, self.mix_ids = search_ids, mix_ids
+
+    async def get_tracks(self, query, requester=None):
+        self.queries.append(query)
+        if query.startswith("ytmsearch:"):
+            return [make_yt(None, v) for v in self.search_ids]
+        return [make_yt(None, v) for v in self.mix_ids]
+
+
+async def test_a_cantus_song_gets_youtube_recommendations_via_its_youtube_match(fake):
+    node = _RecNode(["match1", "other"], ["match1", "rec1", "rec2"])
+    recs = await owners_track(fake).get_recommendations(node)
+    assert node.queries[0] == "ytmsearch:Artist - Song One"
+    assert node.queries[1] == "https://www.youtube.com/watch?v=match1&list=RDmatch1"
+    assert [t.identifier for t in recs] == ["rec1", "rec2"]  # not the YouTube copy of the same song
+
+
+async def test_no_youtube_match_means_no_recommendations(fake):
+    node = _RecNode([], ["x"])
+    assert await owners_track(fake).get_recommendations(node) == []
+    assert len(node.queries) == 1
+
+
+async def test_youtube_songs_still_get_their_own_mix(fake):
+    node = _RecNode([], ["rec1"])
+    recs = await make_yt(OWNER, "abc").get_recommendations(node)
+    assert node.queries == ["https://www.youtube.com/watch?v=abc&list=RDabc"] and [t.identifier for t in recs] == ["rec1"]

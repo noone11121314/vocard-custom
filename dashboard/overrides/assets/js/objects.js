@@ -231,6 +231,18 @@ function isCantusTrack(track) {
     return !!track && /^cantus:\d+:./.test(String(track.identifier || ""));
 }
 
+// Patch 47: a small "Cantus" tag in front of the artist, so a Cantus song
+// is easy to tell from one fetched from YouTube.
+function cantusTagHtml(track) {
+    return isCantusTrack(track) ? `<small class="source-tag" title="From a Cantus library">Cantus</small>` : "";
+}
+
+// The player bar / Now playing card set their text with .text(), so the tag
+// there is a CSS ::before on the description.
+function markCantus(selector, track) {
+    $(selector).toggleClass("is-cantus", isCantusTrack(track));
+}
+
 function isForeignCantus(track, userId) {
     return isCantusTrack(track) && String(track.identifier).split(":")[1] !== String(userId);
 }
@@ -275,7 +287,7 @@ function buildCantusRowHtml(song) {
             <img src="${text(song.cover || "/static/img/notFound.png")}" onerror="this.src='/static/img/notFound.png'" alt="">
             <div class="track-info">
                 <p class="title">${text(song.title || "Unknown")}</p>
-                <p class="description">${sub}</p>
+                <p class="description"><small class="source-tag">Cantus</small>${sub}</p>
             </div>
         </div>
         <div class="right">
@@ -330,7 +342,7 @@ function buildFullHistoryRowHtml(event, track, showServer) {
             <img src="${track.artworkUrl}" onerror="this.src='/static/img/notFound.png'" alt="">
             <div class="track-info">
                 <p class="title">${track.title}</p>
-                <p class="description">${track.author}</p>
+                <p class="description">${cantusTagHtml(track)}${track.author}</p>
             </div>
         </div>
         <div class="right">
@@ -793,6 +805,7 @@ const methods = {
                 player.updateImage("#now-playing-img", track.artworkUrl);
                 $("#now-playing-title").text(track.title);
                 $("#now-playing-description").text(track.author);
+                markCantus("#now-playing-description", track);
                 $("#now-playing-section").show();
             } catch (error) {
                 console.error(`Failed to decode loading track id ${data.trackId}: ${error}`);
@@ -2165,6 +2178,7 @@ class Player {
         this.repeat == "off"
             ? $("#repeat-btn").removeClass("active")
             : $("#repeat-btn").addClass("active");
+        markCantus("#controller-description, #now-playing-description", currentTrack); // Patch 47
     }
 
     updateImage(selector, artworkUrl) {

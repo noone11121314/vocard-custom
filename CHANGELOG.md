@@ -58,6 +58,10 @@ technical write-up (cause, fix, files, tests) is in
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- Cantus songs carry a gold "Cantus" tag (and a 🎼 in Discord), so they're
+  easy to tell from YouTube ones. Recommendations work for them too: the song
+  is found on YouTube Music and its YouTube mix is used. Phones no longer
+  offer to autofill a saved account into the search boxes. (47)
 - New **Full history** page (menu): every song you played or added, in any
   server, and every song played in this server - each song once, with how
   many times it was played, grouped by day, with "Load more" to go further

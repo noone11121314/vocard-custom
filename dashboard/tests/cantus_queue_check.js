@@ -71,8 +71,29 @@ const C = JSON.parse(fs.readFileSync("fixture_cantus_track_ids.json", "utf8"));
   const mineMenu = await menu(`#history-queue .track[data-id="${C.mine}"]`);
   report(!mineMenu.includes("context-copy-link") && mineMenu.includes("context-play-add-to-queue"), `my own Cantus song: no copy link, but I can re-queue it (${mineMenu.join(", ")})`);
 
+  // Patch 47: the "Cantus" tag tells Cantus songs from YouTube ones.
+  const tags = await page.evaluate(({ C, YT }) => ({
+    mine: $(`#history-queue .track[data-id="${C.mine}"] .source-tag`).text(),
+    queued: $(`#queue .track[data-id="${C.theirsUpcoming}"] .source-tag`).length,
+    yt: $(`#history-queue .track[data-id="${YT[0]}"] .source-tag`).length,
+    tagVisible: $(`#history-queue .track[data-id="${C.mine}"] .source-tag`).css("opacity"),
+    nowPlayingTagged: $("#controller-description").hasClass("is-cantus"),
+  }), { C, YT });
+  report(tags.mine === "Cantus" && tags.queued === 1 && tags.yt === 0, "Cantus songs carry a Cantus tag, YouTube songs don't");
+  report(tags.tagVisible === "1", "the tag is visible in the queue panel (not hidden like its other spans)");
+  report(!tags.nowPlayingTagged, "the player bar isn't tagged while a YouTube song plays");
+
   const ytMenu = await menu(`#history-queue .track[data-id="${YT[0]}"]`);
   report(ytMenu.includes("context-copy-link"), "other songs keep Copy link");
+  // Now my Cantus song is the one playing.
+  await page.evaluate((id) => window.__ws.onmessage({ data: JSON.stringify({
+    op: "initPlayer", guildId: "555", userId: "111", users: [{ userId: "111", avatarUrl: "", name: "me" }],
+    tracks: [{ trackId: id, requesterId: "111" }], repeatMode: "off", channelName: "General", currentQueuePosition: 1,
+    hasCurrentTrack: true, loadingTrackId: null, currentPosition: 0, isPlaying: true, isPaused: false, isDj: false, autoplay: false, volume: 30,
+    filters: [], availableFilters: [], prefetchStatuses: {}, cacheStats: { entries: 0, approxBytes: 0 },
+  }) }), C.mine);
+  await page.waitForTimeout(400);
+  report(await page.evaluate(() => $("#controller-description").hasClass("is-cantus")), "the player bar is tagged while a Cantus song plays");
   report(errors.length === 0, `no page errors${errors.length ? ": " + errors.join(" | ") : ""}`);
   await browser.close();
   process.exit(failures ? 1 : 0);

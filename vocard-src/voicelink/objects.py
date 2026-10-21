@@ -112,10 +112,17 @@ class Track:
             return []
 
         rec_type = TrackRecType.from_platform(self.source)
+        identifier = self.identifier
+        if not rec_type and self.source == "cantus":
+            # Patch 47: Cantus has no "similar songs" of its own - find the
+            # song on YouTube Music by artist and title, then use that
+            # match's YouTube mix (the same recommendations a YouTube song gets).
+            identifier = await self._youtube_match_id(node)
+            rec_type = TrackRecType.YOUTUBE if identifier else None
         if not rec_type:
             return []
-        
-        query = rec_type.format(track_id=self.identifier)
+
+        query = rec_type.format(track_id=identifier)
         tracks = await node.get_tracks(query=query, requester=node.bot.user)
         if not tracks:
             return []
@@ -123,7 +130,21 @@ class Track:
         if isinstance(tracks, Playlist):
             tracks = tracks.tracks
 
+        if self.source == "cantus":
+            # The mix starts with the YouTube copy of this very song.
+            tracks = [t for t in tracks if t.identifier != identifier]
         return tracks
+
+    async def _youtube_match_id(self, node: Node) -> Optional[str]:
+        """Patch 47: the YouTube video id of this song's best YouTube Music
+        match ("<artist> - <title>"), or None."""
+        try:
+            found = await node.get_tracks(query=f"ytmsearch:{self.author} - {self.title}", requester=node.bot.user)
+        except Exception:
+            return None
+        if isinstance(found, Playlist):
+            found = found.tracks
+        return next((t.identifier for t in found or [] if t.source == "youtube" and t.identifier), None)
 
     @property
     def track_id(self) -> str:

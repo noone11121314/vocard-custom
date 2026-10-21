@@ -229,7 +229,7 @@ function buildTrackRowHtml(index, track) {
             <img src="${track.artworkUrl}" onerror="this.src='/static/img/notFound.png'" alt="">
             <div class="track-info">
                 <p class="title">${track.title}</p>
-                <p class="description">${track.author}</p>
+                <p class="description">${cantusTagHtml(track)}${track.author}</p>
             </div>
         </div>
         <div class="right">
@@ -247,7 +247,7 @@ function buildTrackCardHtml(track) {
         </div>
         <div class="track-info">
             <p class="title">${track.title}</p>
-            <p class="description">${track.author}</p>
+            <p class="description">${cantusTagHtml(track)}${track.author}</p>
         </div>
     </div>`
 }
@@ -315,9 +315,10 @@ function buildQueueTrackHtml(track, prefetchState, { nowPlaying = false } = {}) 
     // "Now playing · artist" and an equalizer icon in the indicator slot.
     // opacity: 1 because the stock CSS hides every span in a queue card until
     // hover (that's how it hides the "..." menu button).
+    // Patch 47: a "Cantus" tag in front of the artist for Cantus songs.
     const description = nowPlaying
-        ? `<span style="color: var(--primary); font-weight: 600; opacity: 1;">Now playing</span> · ${track.author}`
-        : track.author
+        ? `<span style="color: var(--primary); font-weight: 600; opacity: 1;">Now playing</span> · ${cantusTagHtml(track)}${track.author}`
+        : cantusTagHtml(track) + track.author
     const indicator = nowPlaying
         ? `<span class="material-symbols-outlined" title="Now playing" style="flex: none; font-size: 1.15rem; color: var(--primary); opacity: 1;">graphic_eq</span>`
         : indicatorHtml
@@ -2233,6 +2234,10 @@ $(document).ready(function () {
         }
         changePage("explore-page", true, false)
     }
+
+    // Patch 47: the header search (a stock template) also gets told it's not
+    // a login field, so phones stop offering saved accounts there.
+    $("#search-query").attr({ autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", name: "song-search", "data-1p-ignore": "", "data-lpignore": "true", "data-bwignore": "", "data-form-type": "other" })
 
     // Patch 46: the Cantus tab's search asks Cantus live as you type.
     let cantusSearchTimer = null

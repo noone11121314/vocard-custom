@@ -72,6 +72,15 @@ const ui = (page) => page.evaluate(() => ({
   const report = (ok, text) => { if (!ok) failures++; console.log(`${ok ? "PASS" : "FAIL"}  Cantus - ${text}`); };
 
   let page = await open(browser, html, false);
+  // Patch 47: no password field anywhere (it made phones offer saved accounts
+  // on the search boxes), and every text box opts out of autofill.
+  const fill = await page.evaluate(() => ({
+    passwords: $("input[type=password]").length,
+    masked: $("#cantus-code").hasClass("masked-input") && $("#cantus-code").attr("type") === "text",
+    off: ["#cantus-code", "#cantus-search", "#cantus-server", "#search-query"].map((s) => `${s}=${$(s).attr("autocomplete")}`),
+  }));
+  report(fill.passwords === 0 && fill.masked, `no password fields; the code box is a masked text field (${fill.passwords} password fields)`);
+  report(fill.off.every((x) => x.endsWith("=off")), `autofill off on every box (${fill.off.join(", ")})`);
   let st = await ui(page);
   report(st.visible && !st.serverRow && (await page.locator("#cantus-token, #cantus-app-key").count()) === 0, "a member sees one field: the connect code");
   report(st.codePlaceholder.startsWith("cantus+https://cfa_"), `placeholder shows the code's shape ("${st.codePlaceholder}")`);

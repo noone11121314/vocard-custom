@@ -104,6 +104,10 @@
             "emoji": "<:tiktok:996007689798811698>",
             "color": "0x74ECE9"
         },
+        "cantus": {
+            "emoji": "\ud83c\udfbc",
+            "color": "0xC9A227"
+        },
         "others": {
             "emoji": "🔗",
             "color": "0xb3b3b3"
