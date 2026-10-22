@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.7.3](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.3) | 2026-10-22 | 50 (#5) | Cantus page: space above the song lists |
 | [v0.7.2](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.2) | 2026-10-21 | 49 (#4) | Fix: voice channel status empty for titles with an apostrophe |
 | [v0.7.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.1) | 2026-10-21 | 48 (#3) | Fix: no music after a reboot ("There are no nodes available") |
 | [v0.7.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.0) | 2026-10-21 | 46 (#2), 47 | Cantus connect code, Cantus tag, recommendations for Cantus songs, no login autofill |
@@ -83,6 +84,8 @@ grouped by topic instead.
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- The Cantus page's song and playlist lists no longer touch the line above
+  them. (50, issue #5)
 - Cantus songs carry a gold "Cantus" tag (and a 🎼 in Discord), so they're
   easy to tell from YouTube ones. Recommendations work for them too: the song
   is found on YouTube Music and its YouTube mix is used. Phones no longer

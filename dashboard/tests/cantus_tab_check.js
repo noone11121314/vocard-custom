@@ -64,6 +64,8 @@ async function open(browser, html, connected) {
   await page.waitForTimeout(400);
   report(await page.locator("#cantus-page").isVisible(), "the page opens");
   report(JSON.stringify(await titles(page, "#cantus-song-list")) === JSON.stringify(["My Cantus Song", "Second Song"]), "your songs are listed");
+  const gap = (a, b) => page.evaluate(([a, b]) => Math.round(document.querySelector(b).getBoundingClientRect().top - document.querySelector(a).getBoundingClientRect().bottom), [a, b]);
+  report(await gap("#cantus-songs-count", "#cantus-song-list") >= 12, "space between the song count and the list (#5)");
   report((await page.textContent("#cantus-songs-count")).includes("2 of 3") && await page.locator("#cantus-load-more").isVisible(), "count and Load more shown");
   await page.click("#cantus-load-more");
   await page.waitForTimeout(300);
@@ -83,9 +85,11 @@ async function open(browser, html, connected) {
   await page.click('#cantus-page .ct-tab[data-tab="playlists"]');
   await page.waitForTimeout(300);
   report((await page.textContent("#cantus-playlist-list")).includes("Road trip"), "Playlists tab lists your playlists");
+  report(await gap("#cantus-page .ct-tabs", "#cantus-playlist-list") >= 12, "space between the tabs and the playlists (#5)");
   await page.click("#cantus-playlist-list .ct-playlist-row");
   await page.waitForTimeout(300);
   report(JSON.stringify(await titles(page, "#cantus-playlist-songs")) === JSON.stringify(["My Cantus Song", "Second Song"]), "a playlist opens with its songs in order");
+  report(await gap("#cantus-page .ct-head", "#cantus-playlist-songs") >= 12, "space between the playlist header and its songs (#5)");
   await page.click("#cantus-playlist-play");
   await page.waitForTimeout(200);
   const all = (await sent(page, "addTracks")).pop();

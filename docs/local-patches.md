@@ -2789,6 +2789,20 @@ nothing plays; numeric comparisons; a title that tries to inject code.
 
 ---
 
+## Patch 50 — Cantus page: space above the song lists (issue #5)
+
+User: "the song list and song in the playlist list need some padding on the
+top? ... it seems touching the element right above it". Measured in
+Chromium: the songs list started 0 px under the "2 of 3 songs" line, the
+playlists list 0 px under the Songs / Playlists tabs, and a playlist's songs
+0 px under its "← Playlists · name · Play all" row. The three lists
+(`#cantus-song-list`, `#cantus-playlist-list`, `#cantus-playlist-songs`) now
+have `margin-top: 16px` (index.html, the Cantus page's `<style>`).
+
+Tests: `cantus_tab_check.js` +3, one per list: the gap is at least 12 px.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

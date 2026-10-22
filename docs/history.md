@@ -87,3 +87,6 @@ seconds before Lavalink, tried once and given up. It now keeps trying until
 Lavalink is up (48, issue #3) - **v0.7.1**. The voice channel status stayed empty for
 songs with an apostrophe in the title, such as "I'm" (49, issue #4) -
 **v0.7.2**.
+
+**22 Oct - spacing.** The lists on the Cantus page got some space above them
+(50, issue #5) - **v0.7.3**.
