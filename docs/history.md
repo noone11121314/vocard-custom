@@ -95,4 +95,9 @@ songs with an apostrophe in the title, such as "I'm" (49, issue #4) -
 away everyone's songs before it: a normal member's click moves it to the top
 and plays it (51, issue #6) - **v0.8.0**. It still skipped on the user's server,
 because everyone clicking there counts as a DJ and DJs had kept the jump; now
-every click keeps the queue - **v0.8.1**.
+every click keeps the queue - **v0.8.1**. Later that morning skips stopped working for
+everyone: a skip had landed while a new Cantus song was still starting, and
+the music server went silent while the bot thought the song was playing, so
+it waited for a "song ended" that never came. The bot now checks after each
+skip and moves on if nothing is playing (53, issue #8), and a song's ⋯ menu no
+longer closes when the queue changes (52, issue #7) - **v0.8.2**.

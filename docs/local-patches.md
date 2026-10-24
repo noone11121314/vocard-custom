@@ -2837,6 +2837,61 @@ plays without a vote; a plain
 
 ---
 
+## Patch 52 — A song's ⋯ menu stays open when the queue changes (issue #7)
+
+User: the song menu closed by itself when the green "added" banner showed.
+The banner wasn't the cause: `updateQueueList()` (objects.js) called
+`removeContextMenu()` on every queue update, so a song being added, or the
+next song starting, closed any open menu.
+
+**Fix:** that call is gone. After the list is redrawn,
+`Player.refreshOpenTrackMenu()` looks the menu's song up again by its track
+id (`data-selectedtrackid`) in the list it came from (`data-selectedlist`,
+"queue" or "history", set at the four places in action.js that open the
+menu) and updates its index, so the menu's actions still hit the right song.
+If the song has left that list, the menu closes.
+
+Tests: Chromium `queue_panel_check.js` +1 (the menu stays open when a song
+is added or the next one starts, follows its song when it moves, and closes
+when its song starts playing).
+
+---
+
+## Patch 53 — Skips no longer get stuck after a skip during a slow start (issue #8)
+
+User: normal members couldn't skip, and the dashboard showed the next song
+both as "Now playing" and first in the queue. In the logs, at 10:06:47 a skip
+landed while a new Cantus song was still starting (its loudness is measured
+first, about 15 s). The stop and the play reached Lavalink in the same
+millisecond: Lavalink ended up playing nothing, while the bot still had the
+song as current. The bot only moves on when Lavalink sends a TrackEnd, which
+never came, so every later skip did nothing (13 of 25 skips that day; none
+before). The dashboard's instant "Next" preview (Patch 16) was never undone,
+hence the doubled song.
+
+**Fix (voicelink/player.py):** `stop()` schedules `_check_after_stop()`. It
+waits 2 s (and while a song is still loading, up to 60 s), then asks Lavalink
+for the player. If Lavalink has no track and either no TrackEnd arrived since
+the stop or the bot still holds a current song, it logs "Lavalink is playing
+nothing after a stop ... - moving on", clears the current song and calls
+`do_next()`. TrackEnds are counted in `_dispatch_event`
+(`_track_end_count`); a newer stop cancels the older check.
+
+**Dashboard (objects.js):** after the instant Next preview, if no
+trackUpdate / trackLoading event arrives within 8 s (`SKIP_CONFIRM_MS`), the
+page asks the bot for its real state (`initPlayer`), so a preview that didn't
+happen is replaced.
+
+Tests: 7 unit tests (`test_issue8_stop_check.py`): moves on when Lavalink is
+silent with no TrackEnd; moves on when the TrackEnd came but the bot still
+holds a song; leaves a normal skip alone; does nothing more when the queue
+ended normally; waits while a song is still starting; a newer stop replaces
+the check; does nothing once the bot has left the channel. Chromium
+`queue_panel_check.js` +2 ("Next preview (#8)": asks for the real state
+without a confirmation, doesn't with one).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs
