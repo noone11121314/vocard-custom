@@ -753,6 +753,7 @@ const methods = {
     },
 
     trackUpdate: function (player, data) {
+        player.trackEventCount = (player.trackEventCount || 0) + 1;  // Issue #8, see skipTo
         player.isTrackLoading = false;
         player.loadingTrackId = null;
         player.hasActiveTrack = !!data["trackId"];
@@ -774,6 +775,7 @@ const methods = {
     // remembers trackId so a following prefetchStatus for it can drive the
     // Now Playing caching/progress bar.
     trackLoading: function (player, data) {
+        player.trackEventCount = (player.trackEventCount || 0) + 1;
         player.isTrackLoading = true;
         player.loadingTrackId = data?.trackId || null;
         // This is the moment a track actually becomes "current" from the
@@ -1672,6 +1674,8 @@ class Player {
         }
     }
 
+    SKIP_CONFIRM_MS = 8000;
+
     skipTo(index = 1, keepQueue = false) {
         // Patch 16: for the common "skip to the very next track" click
         // (not a context-menu jump to an arbitrary queue position), show
@@ -1690,6 +1694,14 @@ class Player {
                 $("#now-playing-title").text(nextTrack.title);
                 $("#now-playing-description").text(nextTrack.author);
                 this.updateInfo();
+                // Issue #8: if the bot never confirms the skip (no
+                // trackLoading/trackUpdate), this preview stayed up - the
+                // next song showed as playing and still first in the queue.
+                // Ask for the real state instead.
+                const seen = this.trackEventCount || 0;
+                setTimeout(() => {
+                    if ((this.trackEventCount || 0) === seen) this.send({ op: "initPlayer" });
+                }, this.SKIP_CONFIRM_MS);
             }
         }
         this.send(keepQueue ? { op: "skipTo", index: index, keepQueue: true } : { op: "skipTo", index: index });
@@ -1997,7 +2009,6 @@ class Player {
     }
 
     updateQueueList() {
-        removeContextMenu();
         // Patch 15: without a confirmed current track (hasActiveTrack),
         // currentQueuePosition is just its stale default (0) - nothing is
         // actually "current" to exclude yet, so the upcoming list should
@@ -2031,6 +2042,27 @@ class Player {
             historyHtml ||
             `<p class="history-empty" style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">No songs played in this server yet.</p>`
         );
+        this.refreshOpenTrackMenu(upcomingStart, historyEnd);
+    }
+
+    // Issue #7: this redraw (a song added, the next song starting) used to
+    // close any open song menu - often right as a green "... added" banner
+    // popped up. The menu stays open now; one on a queue / History song finds
+    // that song again and takes its new position (the nearest copy if it's
+    // queued twice), so its actions still hit it. Gone from the list: close.
+    refreshOpenTrackMenu(upcomingStart, historyEnd) {
+        const $menu = $(".context-menu");
+        const list = $menu.attr("data-selectedlist");
+        if (!$menu.length || !list) return;
+        const trackId = $menu.attr("data-selectedtrackid");
+        const oldIndex = Number($menu.attr("data-selectedtrackindex"));
+        const ids = (list === "queue" ? this.queue.slice(upcomingStart) : this.queue.slice(0, historyEnd).reverse()).map((track) => track.trackId);
+        let best = 0;
+        ids.forEach((id, i) => {
+            if (id === trackId && (!best || Math.abs(i + 1 - oldIndex) < Math.abs(best - oldIndex))) best = i + 1;
+        });
+        if (!best) return removeContextMenu();
+        $menu.attr("data-selectedtrackindex", best).data("selectedtrackindex", best);
     }
 
     // Patch 22: patches one queue card's caching bar/checkmark in place

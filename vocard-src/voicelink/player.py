@@ -146,6 +146,9 @@ class Player(VoiceProtocol):
         # play() sets _current - with Patch 11's blocking pre-cache this
         # window can last a long time. See has_dequeued_track.
         self._loading_track: Optional[Track] = None
+        # Issue #8: TrackEnd events seen, and the pending after-stop check.
+        self._track_end_count: int = 0
+        self._stop_check_task: Optional[asyncio.Task] = None
         # One-shot start offset for the next do_next() (restart restore).
         self._resume_start_ms: int = 0
         self._filters: Filters = Filters()
@@ -443,8 +446,10 @@ class Player(VoiceProtocol):
         event_type = data.get("type")
         event: VoicelinkEvent = getattr(events, event_type)(data, self)
 
-        if isinstance(event, TrackEndEvent) and event.reason != "replaced":
-            self._current = None
+        if isinstance(event, TrackEndEvent):
+            self._track_end_count = getattr(self, "_track_end_count", 0) + 1
+            if event.reason != "replaced":
+                self._current = None
         
         if isinstance(event, TrackExceptionEvent) and event.exception["message"] == "This content isn’t available.":
             if self._node.yt_ratelimit:
@@ -947,10 +952,49 @@ class Player(VoiceProtocol):
         if self.channel:
             self._logger.debug(f"Player in {self.guild.name}({self.guild.id}) has been connected to {self.channel.name}({self.channel.id}).")
             
+    STOP_CHECK_DELAY = 2.0
+    STOP_CHECK_MAX_WAIT = 60
+
     async def stop(self):
         """Stops the currently playing track."""
         self._current = None
+        ends_before = getattr(self, "_track_end_count", 0)
         await self.send(method=RequestMethod.PATCH, data={'encodedTrack': None})
+        # Issue #8: every caller of stop() means "go to the next song", and
+        # only Lavalink's TrackEnd event used to move on. A stop that raced a
+        # slow song start (a Cantus loudness measure takes ~15s) left Lavalink
+        # silent while the bot thought the song played; no TrackEnd ever came,
+        # and every later skip did nothing. Check afterwards and move on here.
+        if (task := getattr(self, "_stop_check_task", None)) and not task.done():
+            task.cancel()
+        self._stop_check_task = self._bot.loop.create_task(self._check_after_stop(ends_before))
+
+    async def _check_after_stop(self, ends_before: int) -> None:
+        """Issue #8: after a stop, if Lavalink is playing nothing and either
+        no TrackEnd arrived or the bot still thinks a song plays, go on."""
+        try:
+            await asyncio.sleep(self.STOP_CHECK_DELAY)
+            waited = self.STOP_CHECK_DELAY
+            while self._loading_track and waited < self.STOP_CHECK_MAX_WAIT:  # do_next is busy starting a song
+                await asyncio.sleep(1)
+                waited += 1
+            if self._loading_track or not self.channel:
+                return
+            data = await self.send(method=RequestMethod.GET)
+            if (data or {}).get("track"):
+                return
+            if self._track_end_count != ends_before and not self._current:
+                return  # the normal path: TrackEnd came and do_next ran
+            self._logger.warning(
+                f"Player in {self.guild.name}({self.guild.id}): Lavalink is playing nothing after a stop "
+                f"(TrackEnd seen: {self._track_end_count != ends_before}, bot thought: {self._current}) - moving on"
+            )
+            self._current = None
+            await self.do_next()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self._logger.error("After-stop check failed", exc_info=e)
 
     async def disconnect(self, *, force: bool = False):
         """Disconnects the player from voice."""

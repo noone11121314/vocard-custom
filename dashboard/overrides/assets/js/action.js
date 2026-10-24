@@ -1444,6 +1444,7 @@ $(document).ready(function () {
                     const options = {
                         selectedTrackId: $track.data("id"),
                         selectedTrackIndex: $track.index("#queue .track") + 1,
+                        selectedList: "queue",  // Issue #7: see Player.refreshOpenTrackMenu
                     }
                     if ($target.is("span")) {
                         return buildContextMenu(e, ["skipTo", "moveTop", "moveEnd", "removeTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
@@ -1462,6 +1463,7 @@ $(document).ready(function () {
                     const options = {
                         selectedTrackId: $track.data("id"),
                         selectedTrackIndex: $track.index("#history-queue .track:not(.history-now-playing)") + 1,
+                        selectedList: "history",
                     }
                     if ($target.is("span")) {
                         return buildContextMenu(e, isNowPlaying ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"] : HISTORY_MENU, options)
@@ -1975,6 +1977,7 @@ $(document).ready(function () {
             options = {
                 selectedTrackId: track.data("id"),
                 selectedTrackIndex: track.index("#queue .track") + 1,
+                selectedList: "queue",
             }
             menuItems = ["skipTo", "moveTop", "moveEnd", "removeTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]
         } else if ($target.closest("#history-queue .track").length) {
@@ -1983,6 +1986,7 @@ $(document).ready(function () {
             options = {
                 selectedTrackId: track.data("id"),
                 selectedTrackIndex: track.index("#history-queue .track:not(.history-now-playing)") + 1,
+                selectedList: "history",
             }
             menuItems = track.hasClass("history-now-playing")
                 ? ["getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"]

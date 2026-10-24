@@ -126,6 +126,62 @@ async function openPage(browser, html, n, pos, hasCurrent, volume = 30) {
     console.log(`${ok ? "PASS" : "FAIL"}  Queue click - keeps the queue (#6): click=${JSON.stringify(sent)}`);
     await page.close();
   }
+  // Issue #7: an open song menu survives queue redraws (a song added, the
+  // next song starting) and follows its song's new position; it closes once
+  // that song leaves the list (here: starts playing).
+  {
+    const page = await openPage(browser, html, 6, 1, true);
+    const msg = (m) => page.evaluate((m) => window.__ws.onmessage({ data: JSON.stringify(m) }), m);
+    const state = () => page.evaluate(() => {
+      const $m = $(".context-menu");
+      const ids = $("#queue .track").map(function () { return $(this).data("id"); }).get();
+      return { open: $m.length === 1, index: $m.data("selectedtrackindex"), id: $m.attr("data-selectedtrackid"), ids };
+    });
+    await page.click("#queue .track:nth-child(3) > .material-symbols-outlined", { force: true });
+    await page.waitForTimeout(300);
+    const s0 = await state();
+    await msg({ op: "addTrack", guildId: "555", tracks: [TRACKS[9]], position: -1, requesterId: "111" });
+    await page.waitForTimeout(800);
+    const s1 = await state();
+    await msg({ op: "trackUpdate", guildId: "555", currentQueuePosition: 2, trackId: s0.ids[0], isPaused: false });
+    await page.waitForTimeout(800);
+    const s2 = await state();
+    await page.click("#context-move-top", { force: true }).catch(() => {});
+    await page.waitForTimeout(300);
+    const moved = await page.evaluate(() => (window.__sent || []).filter((m) => m.op === "moveTrack").pop());
+    await page.click("#queue .track:nth-child(2) > .material-symbols-outlined", { force: true });
+    await page.waitForTimeout(300);
+    const s3id = (await state()).id;
+    await msg({ op: "trackUpdate", guildId: "555", currentQueuePosition: 4, trackId: s3id, isPaused: false });  // upcoming card k is at position current + k
+    await page.waitForTimeout(800);
+    const s3 = await state();
+    const ok = s0.open && s0.index === 3 &&
+      s1.open && s1.index === 3 && s1.id === s0.id &&
+      s2.open && s2.index === 2 && s2.ids[1] === s0.id &&
+      moved && moved.index === 2 && moved.newIndex === 1 &&
+      !s3.open && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Song menu stays open through queue updates (#7): added=${s1.open}/${s1.index} next-song=${s2.open}/${s2.index} move-top-index=${moved && moved.index} own-song-started-closes=${!s3.open}${page.__errors.length ? " errors=" + page.__errors.join(" | ") : ""}`);
+    await page.close();
+  }
+  // Issue #8: Next shows the next song at once; if the bot never confirms
+  // (no trackLoading/trackUpdate) the page asks for the real state instead
+  // of leaving that song shown as playing and still first in the queue.
+  for (const [name, confirm] of [["no reply from the bot", false], ["the bot confirms", true]]) {
+    const page = await openPage(browser, html, 6, 1, true);
+    await page.evaluate(() => { window.__sent = []; });
+    await page.click("#skip-btn", { force: true });
+    if (confirm) {
+      await page.waitForTimeout(500);
+      await page.evaluate((m) => window.__ws.onmessage({ data: JSON.stringify(m) }), { op: "trackLoading", guildId: "555", trackId: TRACKS[2], currentQueuePosition: 3, isPaused: false });
+    }
+    await page.waitForTimeout(9000);
+    const resync = await page.evaluate(() => window.__sent.filter((m) => m.op === "initPlayer").length);
+    const ok = (confirm ? resync === 0 : resync === 1) && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Next preview (#8) - ${name}: resync requests=${resync}`);
+    await page.close();
+  }
   // Patch 41: the Shuffle button in the "Next in queue" header.
   const SHUFFLE = [
     // name, tracks, bot position, hasCurrentTrack, should it send shuffleTrack
