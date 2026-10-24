@@ -90,3 +90,7 @@ songs with an apostrophe in the title, such as "I'm" (49, issue #4) -
 
 **22 Oct - spacing.** The lists on the Cantus page got some space above them
 (50, issue #5) - **v0.7.3**.
+
+**24 Oct - keep the queue.** Clicking a song in the queue no longer throws
+away everyone's songs before it: a normal member's click moves it to the top
+and plays it (51, issue #6) - **v0.8.0**.

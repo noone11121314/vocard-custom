@@ -227,7 +227,18 @@ async def getRecommendation(bot: commands.Bot, data: Dict) -> None:
     }
 
 async def skipTo(player: Player, member: Member, data: Dict) -> None:
-    if not await _is_privileged_fresh(player, member):
+    privileged = await _is_privileged_fresh(player, member)
+    index = data.get("index", 1)
+
+    # Issue #6: a normal member clicking a song in the queue (keepQueue)
+    # used to jump to it, passing over everyone's songs in between. Now the
+    # song moves to the top - open to everyone, see Patch 8 - and the skip
+    # below goes through the usual vote; DJs keep the jump.
+    if data.get("keepQueue") and not privileged and index > 1:
+        await player.move_track(index, 1, member)
+        index = 1
+
+    if not privileged:
         if player.current and member == player.current.requester:
             pass
 
@@ -239,7 +250,6 @@ async def skipTo(player: Player, member: Member, data: Dict) -> None:
             if len(player.skip_votes) < (required := player.required()):
                 return error_msg(player.get_msg('player.controls.skip.vote').format(member, len(player.skip_votes), required), guild_id=player.guild.id)
 
-    index = data.get("index", 1)
     if index > 1:
         player.queue.skipto(index)
 

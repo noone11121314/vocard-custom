@@ -2803,6 +2803,33 @@ Tests: `cantus_tab_check.js` +3, one per list: the gap is at least 12 px.
 
 ---
 
+## Patch 51 — A normal member's click in the queue plays that song next, keeping the rest (issue #6)
+
+User: "when a normal user click on a song in the playing queue, instead of
+remove the entire queue up to that song, we just move that song to the top
+and play it". Clicking a song in the dashboard queue sent `skipTo` with its
+index. That moved the queue's position forward (`Queue.skipto`), so every
+song in between went into History unplayed, other people's picks included.
+
+**Fix:** the click now sends `skipTo` with `keepQueue: true` (action.js /
+`Player.skipTo(index, keepQueue)` in objects.js). In `methods.skipTo`, when
+the member isn't privileged (`_is_privileged_fresh`), the song is first
+moved to the top with `player.move_track(index, 1)`, which is open to
+everyone (Patch 8), and then skipped to as the next song. The skip itself
+keeps the usual rule: at once if you requested the current song, otherwise
+the click is your skip vote, and the moved song plays when the vote passes.
+DJs keep the jump. So do the right-click "Skip to", the Next button and the
+arrow key, which send no `keepQueue`. An older dashboard tab without the flag
+gets the old jump.
+
+Tests: 6 unit tests (`test_issue6_queue_click_keeps_queue.py`): a normal
+member's song moves up and plays; without enough votes it moves and waits;
+the current song's requester skips without a vote; a DJ jumps; a plain
+`skipTo` jumps; clicking the very next song moves nothing. Chromium:
+`queue_panel_check.js` +1 (the click sends `keepQueue`).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

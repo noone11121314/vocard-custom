@@ -1448,7 +1448,9 @@ $(document).ready(function () {
                     if ($target.is("span")) {
                         return buildContextMenu(e, ["skipTo", "moveTop", "moveEnd", "removeTrack", "getRecommendation", "getLyrics", "playlistAddTrack", "copyLink"], options)
                     }
-                    player.skipTo(options.selectedTrackIndex)
+                    // Issue #6: keepQueue - for a normal member the bot moves the
+                    // song to the top and plays it instead of jumping past the rest.
+                    player.skipTo(options.selectedTrackIndex, true)
                 }
             } else if ($target.closest("#history-queue").length) {
                 let $track = $target.closest(".track")

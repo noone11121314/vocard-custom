@@ -113,6 +113,19 @@ async function openPage(browser, html, n, pos, hasCurrent, volume = 30) {
       (wantHistory === 0 ? ` empty-note=${state.emptyNote}` : "") + (errors.length ? ` errors=${errors.join(" | ")}` : ""));
     await page.close();
   }
+  // Issue #6: clicking an upcoming song sends skipTo with keepQueue (a
+  // normal member's song then moves to the top instead of skipping the rest).
+  {
+    const page = await openPage(browser, html, 6, 1, true);
+    await page.evaluate(() => { window.__sent = []; });
+    await page.click("#queue .track:nth-child(3) .title", { force: true });
+    await page.waitForTimeout(300);
+    const sent = await page.evaluate(() => window.__sent.filter((m) => m.op === "skipTo"));
+    const ok = JSON.stringify(sent) === JSON.stringify([{ op: "skipTo", index: 3, keepQueue: true }]) && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Queue click - keeps the queue (#6): click=${JSON.stringify(sent)}`);
+    await page.close();
+  }
   // Patch 41: the Shuffle button in the "Next in queue" header.
   const SHUFFLE = [
     // name, tracks, bot position, hasCurrentTrack, should it send shuffleTrack

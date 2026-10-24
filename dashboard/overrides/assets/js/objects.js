@@ -1672,7 +1672,7 @@ class Player {
         }
     }
 
-    skipTo(index = 1) {
+    skipTo(index = 1, keepQueue = false) {
         // Patch 16: for the common "skip to the very next track" click
         // (not a context-menu jump to an arbitrary queue position), show
         // that track's info immediately - same loading-preview treatment
@@ -1692,7 +1692,7 @@ class Player {
                 this.updateInfo();
             }
         }
-        this.send({ op: "skipTo", index: index });
+        this.send(keepQueue ? { op: "skipTo", index: index, keepQueue: true } : { op: "skipTo", index: index });
     }
 
     backTo(index = 1) {
