@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.8.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.1) | 2026-10-24 | 51 (#6) | Fix: a DJ's click in the queue also keeps the songs in between |
 | [v0.8.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.0) | 2026-10-24 | 51 (#6) | Clicking a song in the queue plays it next instead of skipping everything before it |
 | [v0.7.3](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.3) | 2026-10-22 | 50 (#5) | Cantus page: space above the song lists |
 | [v0.7.2](https://github.com/noone11121314/vocard-custom/releases/tag/v0.7.2) | 2026-10-21 | 49 (#4) | Fix: voice channel status empty for titles with an apostrophe |
@@ -85,9 +86,9 @@ grouped by topic instead.
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
-- Clicking a song in the queue as a normal member moves it to the top and
-  plays it (after the usual skip vote) instead of skipping every song before
-  it. DJs and the right-click "Skip to" still jump. (51, issue #6)
+- Clicking a song in the queue moves it to the top and plays it (after the
+  usual skip vote for non-DJs) instead of skipping every song before it. The
+  right-click "Skip to" still jumps. (51, issue #6)
 - The Cantus page's song and playlist lists no longer touch the line above
   them. (50, issue #5)
 - Cantus songs carry a gold "Cantus" tag (and a 🎼 in Discord), so they're

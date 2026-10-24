@@ -1,7 +1,7 @@
 """Issue #6: a normal member clicking a song in the dashboard queue
 (skipTo with keepQueue) moves it to the top and plays it, instead of jumping
-past everyone's songs in between. The skip still goes through the vote;
-DJs and the plain skipTo (right-click "Skip to", Next) keep the jump."""
+past everyone's songs in between - DJs included. The skip still goes through
+the vote for non-DJs; the plain skipTo (right-click "Skip to", Next) jumps."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -68,14 +68,16 @@ async def test_requester_of_current_song_skips_without_vote(privileged):
     player.stop.assert_awaited_once()
 
 
-async def test_dj_click_keeps_the_jump(privileged):
+async def test_dj_click_also_keeps_the_queue_and_skips_without_vote(privileged):
     privileged["value"] = True
-    player = make_player()
+    member = MagicMock()
+    player = make_player(votes_needed=5)
 
-    await methods.skipTo(player, MagicMock(), {"index": 4, "keepQueue": True})
+    await methods.skipTo(player, member, {"index": 4, "keepQueue": True})
 
-    player.move_track.assert_not_awaited()
-    player.queue.skipto.assert_called_once_with(4)
+    player.move_track.assert_awaited_once_with(4, 1, member)
+    player.queue.skipto.assert_not_called()
+    assert member not in player.skip_votes
     player.stop.assert_awaited_once()
 
 

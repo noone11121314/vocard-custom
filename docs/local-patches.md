@@ -2818,13 +2818,20 @@ moved to the top with `player.move_track(index, 1)`, which is open to
 everyone (Patch 8), and then skipped to as the next song. The skip itself
 keeps the usual rule: at once if you requested the current song, otherwise
 the click is your skip vote, and the moved song plays when the vote passes.
-DJs keep the jump. So do the right-click "Skip to", the Next button and the
-arrow key, which send no `keepQueue`. An older dashboard tab without the flag
-gets the old jump.
+The right-click "Skip to", the Next button and the arrow key send no
+`keepQueue` and still jump. An older dashboard tab without the flag gets the
+old jump.
+
+**Follow-up (v0.8.1):** at first DJs kept the jump on a click. But on the
+user's server the people clicking were DJs: one has the DJ role, the other is
+the server owner (Manage Server counts as DJ). So the songs in between were
+still passed over. A click now keeps the queue for everyone; DJs just skip
+without a vote.
 
 Tests: 6 unit tests (`test_issue6_queue_click_keeps_queue.py`): a normal
 member's song moves up and plays; without enough votes it moves and waits;
-the current song's requester skips without a vote; a DJ jumps; a plain
+the current song's requester skips without a vote; a DJ's song moves up and
+plays without a vote; a plain
 `skipTo` jumps; clicking the very next song moves nothing. Chromium:
 `queue_panel_check.js` +1 (the click sends `keepQueue`).
 

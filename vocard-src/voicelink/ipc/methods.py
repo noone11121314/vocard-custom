@@ -230,11 +230,11 @@ async def skipTo(player: Player, member: Member, data: Dict) -> None:
     privileged = await _is_privileged_fresh(player, member)
     index = data.get("index", 1)
 
-    # Issue #6: a normal member clicking a song in the queue (keepQueue)
-    # used to jump to it, passing over everyone's songs in between. Now the
-    # song moves to the top - open to everyone, see Patch 8 - and the skip
-    # below goes through the usual vote; DJs keep the jump.
-    if data.get("keepQueue") and not privileged and index > 1:
+    # Issue #6: clicking a song in the queue (keepQueue) used to jump to it,
+    # passing over everyone's songs in between. Now the song moves to the top
+    # - open to everyone, see Patch 8 - and the skip below goes through the
+    # usual vote. DJs too: on a small server most clickers are DJs.
+    if data.get("keepQueue") and index > 1:
         await player.move_track(index, 1, member)
         index = 1
 

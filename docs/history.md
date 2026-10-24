@@ -93,4 +93,6 @@ songs with an apostrophe in the title, such as "I'm" (49, issue #4) -
 
 **24 Oct - keep the queue.** Clicking a song in the queue no longer throws
 away everyone's songs before it: a normal member's click moves it to the top
-and plays it (51, issue #6) - **v0.8.0**.
+and plays it (51, issue #6) - **v0.8.0**. It still skipped on the user's server,
+because everyone clicking there counts as a DJ and DJs had kept the jump; now
+every click keeps the queue - **v0.8.1**.
