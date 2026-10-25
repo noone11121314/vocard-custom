@@ -83,7 +83,10 @@
             "forward": "Le lecteur a avancé à **{0}**",
             "rewind": "Le lecteur a été rembobiné à **{0}**",
             "replay": "Relecture de la chanson actuelle.",
-            "autoplay": "Le mode autoplay est maintenant **{0}**"
+            "autoplay": "Le mode autoplay est maintenant **{0}**",
+            "remove": {
+                "vote": "{0} a voté pour retirer `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "Vous n'êtes pas DJ. Le DJ actuel est {0}.",
         "djToSelf": "Impossible de transférer le rôle de DJ à vous-même ou à un bot.",
         "djNotInChannel": "`{0}` n'est pas dans le salon vocal.",
-        "djSwapped": "Vous avez transféré le rôle de DJ à `{0}`."
+        "djSwapped": "Vous avez transféré le rôle de DJ à `{0}`.",
+        "missingQueueOwn": "Vous pouvez retirer vos propres titres. Pour celui de quelqu'un d'autre, votez titre par titre.",
+        "missingPositionOwn": "Seuls le DJ, les admins ou la personne qui a demandé ce titre peuvent changer la position."
     },
     "settings": {
         "actions": {

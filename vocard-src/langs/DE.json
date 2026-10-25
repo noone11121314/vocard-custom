@@ -82,7 +82,10 @@
             "forward": "Der Player wurde auf **{0}** vorgespult.",
             "rewind": "Der Player wurde auf **{0}** zurückgespult",
             "replay": "Der aktuelle Song wird wiederholt.",
-            "autoplay": "Der Autoplay-Modus ist jetzt **{0}**"
+            "autoplay": "Der Autoplay-Modus ist jetzt **{0}**",
+            "remove": {
+                "vote": "{0} hat dafür gestimmt, `{1}` zu entfernen. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -107,7 +110,9 @@
         "notDj": "Du bist kein DJ, der aktuelle DJ ist {0}.",
         "djToSelf": "Du kannst den DJ nicht an dich selbst oder einer App übertragen.",
         "djNotInChannel": "`{0}` ist nicht im Sprachkanal.",
-        "djSwapped": "Du hast die DJ-Rolle auf `{0}` übertragen."
+        "djSwapped": "Du hast die DJ-Rolle auf `{0}` übertragen.",
+        "missingQueueOwn": "Du kannst deine eigenen Songs entfernen. Für Songs anderer stimme für jeweils einen Song ab.",
+        "missingPositionOwn": "Nur der DJ, Admins oder wer diesen Song gewünscht hat, können die Position ändern."
     },
     "settings": {
         "actions": {

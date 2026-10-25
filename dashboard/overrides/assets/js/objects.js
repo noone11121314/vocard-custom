@@ -1724,10 +1724,10 @@ class Player {
     }
 
     seekTo(tempPosition) {
-        // Patch 25: updatePosition is @require_permission()'d (DJ only, no
-        // vote fallback), so for a DJ it's safe to move the clock/bar to the
-        // new spot now instead of waiting on the round trip.
-        if (this.isDJ) {
+        // Patch 25: updatePosition has no vote fallback, so when it's sure
+        // to work - a DJ, or (issue #9) whoever requested the playing song -
+        // move the clock/bar to the new spot now instead of waiting.
+        if (this.canActImmediately()) {
             this.currentPosition = Math.trunc(tempPosition);
             this.updateInfo();
         }

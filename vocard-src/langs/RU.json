@@ -83,7 +83,10 @@
             "forward": "Перемотать плеер вперед на **{0}**",
             "rewind": "Отмотать плеер назад на **{0}**",
             "replay": "Повтор текущего трека.",
-            "autoplay": "Режим autoplay **{0}**"
+            "autoplay": "Режим autoplay **{0}**",
+            "remove": {
+                "vote": "{0} has voted to remove `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "Вы не DJ. Текущий DJ: {0}.",
         "djToSelf": "Вы не можете передать роль DJ себе или боту.",
         "djNotInChannel": "Пользователь `{0}` не находится в голосовом канале.",
-        "djSwapped": "Вы передали роль DJ пользователю `{0}`."
+        "djSwapped": "Вы передали роль DJ пользователю `{0}`.",
+        "missingQueueOwn": "You can remove your own songs. To remove someone else's, vote on one song at a time.",
+        "missingPositionOwn": "Only the DJ, admins or whoever requested this song may change the position."
     },
     "settings": {
         "actions": {

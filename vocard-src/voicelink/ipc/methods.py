@@ -339,10 +339,22 @@ async def shuffleTrack(player: Player, member: Member, data: Dict) -> None:
 async def repeatTrack(player: Player, member: Member, data: Dict) -> None:
     await player.set_repeat(requester=member)
 
-@require_permission()
 async def removeTrack(player: Player, member: Member, data: Dict) -> None:
+    # Issue #9: open to everyone in the channel - your own songs go at once,
+    # someone else's song takes a vote (Player.member_remove_track).
     index, index2 = data.get("index"), data.get("index2")
-    await player.remove_track(index, index2, requester=member, expected_track_id=data.get("trackId"))
+    if await _is_privileged_fresh(player, member):
+        await player.remove_track(index, index2, requester=member, expected_track_id=data.get("trackId"))
+        return
+
+    result, info = await player.member_remove_track(member, index, index2, expected_track_id=data.get("trackId"))
+    if result == "voted":
+        track, votes, required = info
+        return error_msg(player.get_msg('player.controls.remove.vote').format(member, track.title, votes, required), guild_id=player.guild.id)
+    if result == "alreadyVoted":
+        return error_msg(player.get_msg('voting.voted'), user_id=member.id)
+    if result == "denied":
+        return error_msg(player.get_msg('permissions.missingQueueOwn'), user_id=member.id)
 
 @require_permission()
 async def clearQueue(player: Player, member: Member, data: Dict) -> None:
@@ -392,8 +404,10 @@ async def updatePause(player: Player, member: Member, data: Dict) -> None:
 
     await player.set_pause(pause, member)
 
-@require_permission()
 async def updatePosition(player: Player, member: Member, data: Dict) -> None:
+    # Issue #9: the requester of the playing song may seek in it too.
+    if not (player.can_seek(member) or await _is_privileged_fresh(player, member)):
+        return error_msg(player.get_msg('permissions.missingPositionOwn'), user_id=member.id)
     position = data.get("position");
     await player.seek(position, member);
 

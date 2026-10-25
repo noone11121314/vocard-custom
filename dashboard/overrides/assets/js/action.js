@@ -2010,11 +2010,16 @@ $(document).ready(function () {
                 buttonNames = buttonNames.filter((n) => n !== "copyLink" && !(isForeignCantus(t, player.userId) && foreignOnly.includes(n)))
             }
         } catch (error) {}
+        // Issue #9: anyone may remove from the queue - their own songs at
+        // once, someone else's by vote (the bot's member_remove_track).
+        const queuedTrack = options && options.selectedList === "queue" ? player.queue[player.upcomingStart() + options.selectedTrackIndex - 1] : null
+        const ownTrack = !!queuedTrack && queuedTrack.requester?.userId === player.userId
+        const removeText = player.isDJ || ownTrack ? localeTexts.context.removeFromQueue : (localeTexts.context.voteToRemove || "Vote to remove")
         const buttonActions = {
             playNow: createActionElement("play_arrow", localeTexts.context.playNow, "context-play-now"),
             playNext: createActionElement("redo", localeTexts.context.playNext, "context-play-next"),
             addToQueue: createActionElement("add_notes", localeTexts.context.addToQueue, "context-play-add-to-queue"),
-            removeTrack: createActionElement("do_not_disturb_on", localeTexts.context.removeFromQueue, "context-remove-track", !player.isDJ, true),
+            removeTrack: createActionElement("do_not_disturb_on", removeText, "context-remove-track", false, true),
             skipTo: createActionElement("skip_next", localeTexts.context.skipTo, "context-skip-to", options.selectedTrackIndex !== 1 || !player.isDJ),
             backTo: createActionElement("skip_previous", localeTexts.context.backTo, "context-back-to", options.selectedTrackIndex !== 1 || !player.isDJ),
             // Reordering (moveTop/moveEnd) is open to every member in the

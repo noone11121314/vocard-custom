@@ -15,7 +15,7 @@ const SCENARIOS = [
   ["first song playing, nothing before it", 3, 1, true, 0],
 ];
 
-function initPlayer(n, pos, hasCurrent, volume = 30) {
+function initPlayer(n, pos, hasCurrent, volume = 30, extra = {}) {
   return {
     op: "initPlayer", guildId: "555", userId: "111",
     users: [{ userId: "111", avatarUrl: "", name: "me" }],
@@ -24,10 +24,11 @@ function initPlayer(n, pos, hasCurrent, volume = 30) {
     hasCurrentTrack: hasCurrent, loadingTrackId: null, currentPosition: 0,
     isPlaying: hasCurrent, isPaused: false, isDj: true, autoplay: false, volume,
     filters: [], availableFilters: [], prefetchStatuses: {}, cacheStats: { entries: 0, approxBytes: 0 },
+    ...extra,
   };
 }
 
-async function openPage(browser, html, n, pos, hasCurrent, volume = 30) {
+async function openPage(browser, html, n, pos, hasCurrent, volume = 30, extra = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -46,7 +47,7 @@ async function openPage(browser, html, n, pos, hasCurrent, volume = 30) {
   });
   await page.goto("http://localhost:8000/__check", { waitUntil: "load" });
   await page.waitForFunction(() => window.__ws && window.__ws.onmessage, null, { timeout: 10000 });
-  await page.evaluate((msg) => window.__ws.onmessage({ data: JSON.stringify(msg) }), initPlayer(n, pos, hasCurrent, volume));
+  await page.evaluate((msg) => window.__ws.onmessage({ data: JSON.stringify(msg) }), initPlayer(n, pos, hasCurrent, volume, extra));
   await page.evaluate(() => { $("#screen-loader").hide(); $(".queue-container").removeClass("close"); });
   await page.waitForTimeout(400);
   page.__errors = errors;
@@ -180,6 +181,38 @@ async function openPage(browser, html, n, pos, hasCurrent, volume = 30) {
     const ok = (confirm ? resync === 0 : resync === 1) && page.__errors.length === 0;
     if (!ok) failures++;
     console.log(`${ok ? "PASS" : "FAIL"}  Next preview (#8) - ${name}: resync requests=${resync}`);
+    await page.close();
+  }
+  // Issue #9: a normal member's song menu offers Remove on their own song and
+  // "Vote to remove" on someone else's - neither greyed out - and both send
+  // removeTrack with the song's id.
+  {
+    const extra = {
+      isDj: false,
+      users: [{ userId: "111", avatarUrl: "", name: "me" }, { userId: "222", avatarUrl: "", name: "friend" }],
+      tracks: TRACKS.slice(0, 4).map((trackId, i) => ({ trackId, requesterId: i === 2 ? "111" : "222" })),
+    };
+    const page = await openPage(browser, html, 4, 1, true, 30, extra);
+    // the page learns who "me" is from initUser
+    await page.evaluate(() => window.__ws.onmessage({ data: JSON.stringify({ op: "initUser", userId: "111", data: { playlist: {}, inbox: [] }, botHistory: [], uploadHistory: [] }) }));
+    await page.waitForTimeout(300);
+    const menuFor = async (nth) => {
+      await page.evaluate(() => { $(".context-menu").remove(); window.__sent = []; });
+      await page.click(`#queue .track:nth-child(${nth}) > .material-symbols-outlined`, { force: true });
+      await page.waitForTimeout(300);
+      const row = await page.evaluate(() => ({ text: $("#context-remove-track p").text(), blocked: $("#context-remove-track").hasClass("blocked") }));
+      await page.click("#context-remove-track", { force: true }).catch(() => {});
+      await page.waitForTimeout(300);
+      row.sent = await page.evaluate(() => (window.__sent || []).filter((m) => m.op === "removeTrack").pop());
+      return row;
+    };
+    const own = await menuFor(2);    // upcoming #2 = TRACKS[2], requested by me
+    const other = await menuFor(1);  // upcoming #1 = TRACKS[1], someone else's
+    const ok = !own.blocked && !other.blocked && other.text === "Vote to remove" && own.text !== other.text &&
+      own.sent && own.sent.index === 2 && own.sent.trackId === TRACKS[2] &&
+      other.sent && other.sent.index === 1 && other.sent.trackId === TRACKS[1] && page.__errors.length === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  Normal member can remove / vote to remove (#9): own="${own.text}" blocked=${own.blocked} other="${other.text}" blocked=${other.blocked}${page.__errors.length ? " errors=" + page.__errors.join(" | ") : ""}`);
     await page.close();
   }
   // Patch 41: the Shuffle button in the "Next in queue" header.

@@ -83,7 +83,10 @@
             "forward": "Przewinięto odtwarzacz do **{0}**",
             "rewind": "Cofnięto odtwarzacz do **{0}**",
             "replay": "Ponowne odtwarzanie bieżącego utworu.",
-            "autoplay": "Tryb autoodwarzania jest teraz **{0}**"
+            "autoplay": "Tryb autoodwarzania jest teraz **{0}**",
+            "remove": {
+                "vote": "{0} has voted to remove `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "Nie jesteś DJ'em. Obecnym DJ'em jest {0}.",
         "djToSelf": "Nie możesz przekazać roli DJ'a sobie lub botu.",
         "djNotInChannel": "`{0}` nie jest na kanale głosowym.",
-        "djSwapped": "Przekazałeś rolę DJ'a użytkownikowi `{0}`."
+        "djSwapped": "Przekazałeś rolę DJ'a użytkownikowi `{0}`.",
+        "missingQueueOwn": "You can remove your own songs. To remove someone else's, vote on one song at a time.",
+        "missingPositionOwn": "Only the DJ, admins or whoever requested this song may change the position."
     },
     "settings": {
         "actions": {

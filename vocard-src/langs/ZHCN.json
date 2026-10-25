@@ -83,7 +83,10 @@
             "forward": "已快进到 **{0}**",
             "rewind": "已快退到 **{0}**",
             "replay": "正在重播当前歌曲。",
-            "autoplay": "自动播放模式现已 **{0}**"
+            "autoplay": "自动播放模式现已 **{0}**",
+            "remove": {
+                "vote": "{0} has voted to remove `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "您不是 DJ。当前 DJ 是 {0}。",
         "djToSelf": "您不能将 DJ 身份转移给自己或机器人。",
         "djNotInChannel": "`{0}` 不在语音频道中。",
-        "djSwapped": "您已将 DJ 身份转移给 `{0}`。"
+        "djSwapped": "您已将 DJ 身份转移给 `{0}`。",
+        "missingQueueOwn": "You can remove your own songs. To remove someone else's, vote on one song at a time.",
+        "missingPositionOwn": "Only the DJ, admins or whoever requested this song may change the position."
     },
     "settings": {
         "actions": {

@@ -188,6 +188,9 @@ class Player(VoiceProtocol):
         self.previous_votes = set()
         self.shuffle_votes = set()
         self.stop_votes = set()
+        # Issue #9: votes to remove someone else's song, per queued track
+        # (keyed by id() - Track defines __eq__ but no __hash__).
+        self.remove_votes: Dict[int, Tuple[Track, set]] = {}
 
         self._ph = PlayerPlaceholder(client, self)
         self._logger: Optional[logging.Logger] = self._node._logger
@@ -1312,6 +1315,63 @@ class Player(VoiceProtocol):
             }, requester=requester)
 
         return removed_tracks
+
+    async def member_remove_track(self, member: Member, index: int, index2: int = None, remove_target: Member = None, expected_track_id: Optional[str] = None) -> Tuple[str, Any]:
+        """Issue #9: remove_track() for any member in the channel.
+
+        A DJ removes anything. Anyone else removes their own songs at once,
+        and votes to remove a single song someone else added; it goes when
+        the vote reaches required(). Returns one of:
+        ("removed", {index: track}), ("voted", (track, votes, required)),
+        ("alreadyVoted", track) or ("denied", None).
+        """
+        upcoming = self.queue.tracks(incTrack=False)
+        if expected_track_id is not None:
+            if not (1 <= index <= len(upcoming)) or upcoming[index - 1].track_id != expected_track_id:
+                for i, track in enumerate(upcoming, start=1):
+                    if track.track_id == expected_track_id:
+                        index, index2 = i, i
+                        break
+                else:
+                    return "removed", {}
+            elif index2 is None:
+                index2 = index
+
+        if self.is_privileged(member):
+            return "removed", await self.remove_track(index, index2, remove_target, requester=member, expected_track_id=expected_track_id)
+
+        lo, hi = (index, index if index2 is None else index2)
+        if hi < lo:
+            lo, hi = hi, lo
+        targets = [t for t in upcoming[max(0, lo - 1):max(0, hi)] if remove_target is None or t.requester == remove_target]
+        if not targets:
+            return "removed", await self.remove_track(index, index2, remove_target, requester=member)
+
+        if all(t.requester == member for t in targets):
+            return "removed", await self.remove_track(index, index2, remove_target, requester=member)
+
+        if lo != hi:
+            return "denied", None
+
+        track = targets[0]
+        live = {id(t) for t in upcoming}
+        for key in [k for k in self.remove_votes if k not in live]:
+            del self.remove_votes[key]
+        _, votes = self.remove_votes.setdefault(id(track), (track, set()))
+        if member in votes:
+            return "alreadyVoted", track
+        votes.add(member)
+        if len(votes) < (required := self.required()):
+            return "voted", (track, len(votes), required)
+
+        self.remove_votes.pop(id(track), None)
+        return "removed", await self.remove_track(lo, lo, requester=member, expected_track_id=track.track_id)
+
+    def can_seek(self, member: Member) -> bool:
+        """Issue #9: a DJ, or whoever requested the song that's playing."""
+        if self.is_privileged(member):
+            return True
+        return bool(self._current and self._current.requester == member)
     
     async def seek(self, position: float, requester: Member = None) -> float:
         """Seeks to a position in the currently playing track milliseconds"""

@@ -83,7 +83,10 @@
             "forward": "Tua tới trình phát đến **{0}**",
             "rewind": "Tua lùi trình phát đến **{0}**",
             "replay": "Phát lại bài hát hiện tại.",
-            "autoplay": "Chế độ tự động phát bây giờ là **{0}**"
+            "autoplay": "Chế độ tự động phát bây giờ là **{0}**",
+            "remove": {
+                "vote": "{0} đã bỏ phiếu xoá `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "Bạn không phải là DJ. DJ hiện tại là {0}.",
         "djToSelf": "Bạn không thể chuyển vai trò DJ cho chính mình hoặc một bot.",
         "djNotInChannel": "`{0}` không ở trong kênh voice.",
-        "djSwapped": "Bạn đã chuyển vai trò DJ cho `{0}`."
+        "djSwapped": "Bạn đã chuyển vai trò DJ cho `{0}`.",
+        "missingQueueOwn": "Bạn có thể xoá bài của chính mình. Muốn xoá bài của người khác, hãy bỏ phiếu từng bài một.",
+        "missingPositionOwn": "Chỉ DJ, quản trị viên hoặc người yêu cầu bài này mới có thể đổi vị trí phát."
     },
     "settings": {
         "actions": {

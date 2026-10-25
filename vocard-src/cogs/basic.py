@@ -668,11 +668,17 @@ class Basic(commands.Cog):
         if not player:
             return await send_localized_message(ctx, "player.errors.noPlayer", ephemeral=True)
 
-        if not player.is_privileged(ctx.author):
-            return await send_localized_message(ctx, "permissions.missingQueue", ephemeral=True)
+        # Issue #9: anyone may remove their own songs; someone else's song takes a vote.
+        result, info = await player.member_remove_track(ctx.author, position1, position2, remove_target=member)
+        if result == "voted":
+            track, votes, required = info
+            return await send_localized_message(ctx, "player.controls.remove.vote", ctx.author, track.title, votes, required)
+        if result == "alreadyVoted":
+            return await send_localized_message(ctx, "voting.voted", ephemeral=True)
+        if result == "denied":
+            return await send_localized_message(ctx, "permissions.missingQueueOwn", ephemeral=True)
 
-        removed_tracks = await player.remove_track(position1, position2, remove_target=member, requester=ctx.author)
-        await send_localized_message(ctx, "queue.management.removed", len(removed_tracks.keys()))
+        await send_localized_message(ctx, "queue.management.removed", len(info.keys()))
 
     @commands.hybrid_command(name="forward", aliases=get_aliases("forward"))
     @app_commands.describe(position="Input an amount that you to forward to. Exmaple: 1:20")
@@ -683,8 +689,8 @@ class Basic(commands.Cog):
         if not player:
             return await send_localized_message(ctx, "player.errors.noPlayer", ephemeral=True)
 
-        if not player.is_privileged(ctx.author):
-            return await send_localized_message(ctx, "permissions.missingPosition", ephemeral=True)
+        if not player.can_seek(ctx.author):  # Issue #9: or the song's requester
+            return await send_localized_message(ctx, "permissions.missingPositionOwn", ephemeral=True)
 
         if not player.current:
             return await send_localized_message(ctx, "player.errors.noTrackPlaying", ephemeral=True)
@@ -704,8 +710,8 @@ class Basic(commands.Cog):
         if not player:
             return await send_localized_message(ctx, "player.errors.noPlayer", ephemeral=True)
 
-        if not player.is_privileged(ctx.author):
-            return await send_localized_message(ctx, "permissions.missingPosition", ephemeral=True)
+        if not player.can_seek(ctx.author):  # Issue #9: or the song's requester
+            return await send_localized_message(ctx, "permissions.missingPositionOwn", ephemeral=True)
 
         if not player.current:
             return await send_localized_message(ctx, "player.errors.noTrackPlaying", ephemeral=True)
@@ -724,8 +730,8 @@ class Basic(commands.Cog):
         if not player:
             return await send_localized_message(ctx, "player.errors.noPlayer", ephemeral=True)
 
-        if not player.is_privileged(ctx.author):
-            return await send_localized_message(ctx, "permissions.missingPosition", ephemeral=True)
+        if not player.can_seek(ctx.author):  # Issue #9: or the song's requester
+            return await send_localized_message(ctx, "permissions.missingPositionOwn", ephemeral=True)
 
         if not player.current:
             return await send_localized_message(ctx, "player.errors.noTrackPlaying", ephemeral=True)

@@ -83,7 +83,10 @@
             "forward": "플레이어가 **{0}**로 전진되었습니다.",
             "rewind": "플레이어가 **{0}**로 되감기되었습니다.",
             "replay": "현재 노래를 다시 재생합니다.",
-            "autoplay": "자동 재생 모드가 **{0}**(으)로 변경되었습니다."
+            "autoplay": "자동 재생 모드가 **{0}**(으)로 변경되었습니다.",
+            "remove": {
+                "vote": "{0} has voted to remove `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "당신은 DJ가 아닙니다. 현재 DJ는 {0}입니다.",
         "djToSelf": "자신이나 봇에게 DJ를 이전할 수 없습니다.",
         "djNotInChannel": "`{0}`님이 음성 채널에 없습니다.",
-        "djSwapped": "당신은 DJ 권한을 `{0}`님에게 이전했습니다."
+        "djSwapped": "당신은 DJ 권한을 `{0}`님에게 이전했습니다.",
+        "missingQueueOwn": "You can remove your own songs. To remove someone else's, vote on one song at a time.",
+        "missingPositionOwn": "Only the DJ, admins or whoever requested this song may change the position."
     },
     "settings": {
         "actions": {

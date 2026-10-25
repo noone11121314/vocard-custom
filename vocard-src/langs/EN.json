@@ -83,7 +83,10 @@
             "forward": "Forward the player to **{0}**",
             "rewind": "Rewound the player to **{0}**",
             "replay": "Replaying the current song.",
-            "autoplay": "Autoplay mode is now **{0}**"
+            "autoplay": "Autoplay mode is now **{0}**",
+            "remove": {
+                "vote": "{0} has voted to remove `{1}`. [{2}/{3}]"
+            }
         }
     },
     "voice": {
@@ -108,7 +111,9 @@
         "notDj": "You are not DJ. The current DJ is {0}.",
         "djToSelf": "You cannot transfer role of DJ to yourself or a bot.",
         "djNotInChannel": "`{0}` is not in the voice channel.",
-        "djSwapped": "You have transferred the role of dj to `{0}`."
+        "djSwapped": "You have transferred the role of dj to `{0}`.",
+        "missingQueueOwn": "You can remove your own songs. To remove someone else's, vote on one song at a time.",
+        "missingPositionOwn": "Only the DJ, admins or whoever requested this song may change the position."
     },
     "settings": {
         "actions": {

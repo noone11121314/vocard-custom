@@ -345,8 +345,8 @@ class Forward(ControlButton):
         )
         
     async def callback(self, interaction: discord.Interaction):
-        if not self.player.is_privileged(interaction.user):
-            return await self.send(interaction, 'permissions.missingPosition', ephemeral=True)
+        if not self.player.can_seek(interaction.user):  # Issue #9
+            return await self.send(interaction, 'permissions.missingPositionOwn', ephemeral=True)
 
         if not self.player.current:
             return await self.send(interaction, 'player.errors.noTrackPlaying', ephemeral=True)
@@ -364,8 +364,8 @@ class Rewind(ControlButton):
         )
         
     async def callback(self, interaction: discord.Interaction):
-        if not self.player.is_privileged(interaction.user):
-            return await self.send(interaction, 'permissions.missingPosition', ephemeral=True)
+        if not self.player.can_seek(interaction.user):  # Issue #9
+            return await self.send(interaction, 'permissions.missingPositionOwn', ephemeral=True)
 
         if not self.player.current:
             return await self.send(interaction, 'player.errors.noTrackPlaying', ephemeral=True)
