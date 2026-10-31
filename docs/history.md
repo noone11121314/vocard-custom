@@ -101,3 +101,9 @@ the music server went silent while the bot thought the song was playing, so
 it waited for a "song ended" that never came. The bot now checks after each
 skip and moves on if nothing is playing (53, issue #8), and a song's ⋯ menu no
 longer closes when the queue changes (52, issue #7) - **v0.8.2**.
+
+**31 Oct - more control for everyone.** Normal members can remove their own
+songs, vote to remove someone else's, and seek in their own song (54, issue
+#9) - **v0.9.0**. It waited on the staging bot, which had stopped on 27 Oct and
+was never restarted, so production refused a member's Remove twice
+that morning before it went live.

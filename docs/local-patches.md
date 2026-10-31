@@ -2892,6 +2892,45 @@ without a confirmation, doesn't with one).
 
 ---
 
+## Patch 54 — Normal members remove their own songs, vote to remove others', and seek in their own song (issue #9)
+
+User: "add to normal user to has control over the music queue: skip song,
+remove song from queue". A normal member (not DJ, not admin) could add, move
+and vote to skip, but couldn't remove any song, not even one they had added
+by mistake, and couldn't seek.
+
+**Fix:**
+- `Player.member_remove_track()` (voicelink/player.py) is used by the
+  dashboard's `removeTrack` and the Discord `/remove`. A DJ removes anything,
+  as before. Anyone else removes their own songs (one or a range) at once.
+  A single song someone else added takes a vote: votes are kept per queued
+  track in `remove_votes` (keyed by `id(track)`, since Track has `__eq__` but
+  no `__hash__`), and the song goes once they reach `required()`, the same
+  count as a skip vote (1 vote with 2-4 people in the channel). A range that
+  includes other people's songs is refused. The dashboard's track id is still
+  checked, so a stale index never removes the wrong song.
+- `Player.can_seek()`: a DJ, or whoever requested the song that's playing.
+  Used by `updatePosition` (dashboard seek bar and arrow keys), `/forward`,
+  `/rewind`, `/replay` and the controller's Forward/Rewind buttons.
+- Still DJ only: clear queue, leave, filters, autoplay, loop.
+- Dashboard: the queue song menu's Remove is no longer greyed out for
+  non-DJs; on someone else's song it reads "Vote to remove". The seek bar
+  moves at once for the song's requester too (`canActImmediately()`).
+- New messages `player.controls.remove.vote`, `permissions.missingQueueOwn`
+  and `permissions.missingPositionOwn` in all 12 language files (translated
+  for EN, VN, FR, DE, ES; English in the others).
+
+Tests: 10 unit tests (`test_issue9_member_queue_control.py`): own song goes
+at once; someone else's needs the vote (and a second vote from the same
+person doesn't count); the vote follows the song when its index moved; a
+range with others' songs is refused; a range of your own goes; a DJ removes
+anything; a song gone from the queue removes nothing; seek only in your own
+playing song; the dashboard announces a vote; the dashboard seek check.
+Chromium `queue_panel_check.js` +1 (a normal member sees Remove on their own
+song and "Vote to remove" on others', neither greyed out).
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

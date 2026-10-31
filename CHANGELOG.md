@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.9.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.0) | 2026-10-31 | 54 (#9) | Normal members remove their own songs, vote to remove others', and seek in their own song |
 | [v0.8.2](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.2) | 2026-10-24 | 52 (#7), 53 (#8) | Fix: skips stuck after a skip during a slow start; song menu closing on queue updates |
 | [v0.8.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.1) | 2026-10-24 | 51 (#6) | Fix: a DJ's click in the queue also keeps the songs in between |
 | [v0.8.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.0) | 2026-10-24 | 51 (#6) | Clicking a song in the queue plays it next instead of skipping everything before it |
@@ -32,6 +33,10 @@ grouped by topic instead.
 | [v0.1.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.1.0) | 2026-10-18 | 1–32 | The customized Vocard deployment |
 
 ## Permissions and settings
+- Normal members remove their own songs from the queue at once, and vote to
+  remove a song someone else added (the same vote count as a skip). They can
+  also seek, forward, rewind and replay while their own song plays. Clear
+  queue, leave, filters, autoplay and loop stay DJ-only. (54, issue #9)
 - Members with the server's DJ role are no longer refused queue edits when
   the bot's cached copy of their roles is out of date: a refusal is
   re-checked against Discord first. (32)
