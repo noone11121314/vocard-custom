@@ -9,6 +9,16 @@ cd "$(dirname "$0")/.."
 for f in dashboard/overrides/assets/js/*.js; do
   docker run --rm -v "$PWD/$f:/f.js:ro" node:20-slim node --check /f.js
 done
+# Patch 55: an editor that saves by writing a new file (rather than in place)
+# leaves the container's single-file mount on the old copy. Only a restart
+# re-attaches it, so say so instead of quietly "applying" the old code.
+for f in dashboard/overrides/assets/js/*.js; do
+  n=$(basename "$f" .js)
+  if [ "$(sha256sum < "$f")" != "$(docker exec vocard-dashboard sh -c "sha256sum < /app/assets/js/$n.js")" ]; then
+    echo "the dashboard still sees an old $n.js (the file was replaced, not edited in place) - run dashboard/restart_dashboard.sh instead" >&2
+    exit 1
+  fi
+done
 docker exec -w /app vocard-dashboard python -c "import main, utils; utils.process_js_files()" >/dev/null
 for f in dashboard/overrides/assets/js/*.js; do
   n=$(basename "$f" .js)

@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.9.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.1) | 2026-11-08 | 55 (#11) | Fix: dashboard pages have URLs; Back steps back through them instead of to the login page |
 | [v0.9.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.0) | 2026-10-31 | 54 (#9) | Normal members remove their own songs, vote to remove others', and seek in their own song |
 | [v0.8.2](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.2) | 2026-10-24 | 52 (#7), 53 (#8) | Fix: skips stuck after a skip during a slow start; song menu closing on queue updates |
 | [v0.8.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.8.1) | 2026-10-24 | 51 (#6) | Fix: a DJ's click in the queue also keeps the songs in between |
@@ -96,6 +97,11 @@ grouped by topic instead.
   at the same position, and keeps the paused state. (18, 20, 23, 25)
 
 ## Dashboard
+- Every page has its own URL (`#/explore`, `#/track/<id>`, ...). Back, on
+  the browser, the phone or the header arrow, steps back through the pages
+  you opened instead of going to the login page; Forward and reload work.
+  The back arrow no longer goes missing when Home's lists load late, and
+  those lists no longer pull you out of a song you opened. (55, issue #11)
 - A song's ⋯ menu stays open when someone adds a song or the next one
   starts; it closes only if that song leaves the list. (52, issue #7)
 - Clicking a song in the queue moves it to the top and plays it (after the

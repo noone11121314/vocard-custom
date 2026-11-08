@@ -45,7 +45,7 @@ parsing/clamping/failure modes) and the `gain` field's sidecar persistence/
 `_adopt_existing_files` recovery, alongside its original yt-dlp-download
 coverage; `test_node_direct_resolve.py` also covers `Node.get_track_gain`.
 
-433 unit tests, 41 integration tests (474 total), plus the dashboard suites below.
+442 unit tests, 41 integration tests (483 total), plus the dashboard suites below.
 
 ## Why the tests are structured this way
 
@@ -141,7 +141,7 @@ It loads `.env` itself (companion secret, MongoDB login) and runs:
 | `dashboard/tests/run_sync_test.sh` | real `Player`/`Queue` code + two jsdom dashboards running the real dashboard JS | dashboards drifting out of sync with the bot; the page-reload rules |
 | `dashboard/tests/fuzz_sync.sh [seeds] [steps]` | same, with random multi-user sessions | the same, for sequences nobody thought to script |
 | `dashboard/tests/run_sync_test.sh` also runs `test_dashboard_user.py` | the dashboard server override, in the stock dashboard image | several tabs/devices per user (Patch 43) |
-| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin; a fake websocket plays the bot | a page broken only after minification or only in a real browser; the queue panel's History and Shuffle buttons (Patches 38-41) |
+| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin; a fake websocket plays the bot | a page broken only after minification or only in a real browser; the queue panel's History and Shuffle buttons (Patches 38-41); page URLs, Back/Forward/reload and the back arrow at phone and desktop width (`navigation_check.js`, Patch 55) |
 
 The integration suites (Patch 34):
 

@@ -107,3 +107,13 @@ songs, vote to remove someone else's, and seek in their own song (54, issue
 #9) - **v0.9.0**. It waited on the staging bot, which had stopped on 27 Oct and
 was never restarted, so production refused a member's Remove twice
 that morning before it went live.
+
+## November
+
+**8 Nov - Back goes back.** On the dashboard a song's page sometimes had no
+back arrow, and the browser's Back went to the Discord login page. The
+dashboard had never told the browser about its pages. Now every page has its
+own URL, so Back, Forward and reload behave as on any site, and Home's lists
+loading late no longer pull you out of a song (55, issue #11) - **v0.9.1**.
+The Discord controller's autoplay button (#10) was waiting on the staging
+bot at the time.

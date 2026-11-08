@@ -2931,6 +2931,62 @@ song and "Vote to remove" on others', neither greyed out).
 
 ---
 
+## Patch 55 — Every dashboard page has a URL, and Back steps back through the pages you opened (issue #11)
+
+User: no back button after opening a song to see its recommendations, and
+the browser's Back went to the Discord login page instead of the previous
+page. Two causes:
+- The dashboard never wrote its pages into the browser history. Every page
+  was the same URL, so Back left the dashboard (for the Discord sign-in page
+  you came from).
+- Home's three history lists come back some time after the page loads
+  (seconds on a slow link). Each answer called `refreshHomePage()`, which
+  switched to Home, closing a song you had already opened, and its back arrow
+  fade-out could still be running when the next page opened. That left the
+  new page with no back arrow at all.
+
+**Fix (action.js, objects.js):**
+- `changePage()` records each page as a history entry (`syncUrl`):
+  `#/explore`, `#/history`, `#/cantus`, `#/servers`, `#/servers/<id>`,
+  `#/settings`, `#/playlist/<id>`, `#/track/<track id>` and
+  `#/lyrics/<track id>`. Home is the plain URL. Pages without a URL of their
+  own (no bot, no lyrics found) don't add an entry. The first page of a visit
+  replaces the entry it loaded on.
+- Browser and phone Back/Forward (`popstate`) show that entry's page. A
+  page that was closed is opened again from its URL (track, lyrics, playlist,
+  server settings); an online playlist uses the details saved in its history
+  entry. When nothing can rebuild it, Home is shown. The page you step back
+  out of is closed, as the back arrow always did.
+- The header's back arrow is `history.back()`, so it and the browser's Back
+  agree.
+- Reloading (or opening a copied link) reopens the page in the URL once the
+  bot has answered (`restoreRouteOnce`, called from `initUser`), with Home
+  behind it so Back goes Home rather than out of the dashboard.
+- `refreshHomePage()` only switches pages while Home (or the "no bot" page)
+  is on show. It checks `currentPageId`, which is set when a page switch
+  starts; reading which page is visible was wrong during the fade.
+- `changePage()` finishes any running back-arrow/header fade first.
+- Track and lyrics pages get unique ids (`pageSeq`). Counting existing pages
+  gave a new page the id of one still open once an earlier one had closed.
+- `<a href="#">` links (Settings in the avatar menu) no longer add a bogus
+  history entry.
+- Back on Home still leaves the dashboard, as on any site.
+
+**`dashboard/apply_js.sh`** now refuses when the container still sees an
+old copy of a JS file. An editor that saves by replacing the file leaves the
+container's single-file mount on the old one, and only a restart
+(`restart_dashboard.sh`) re-attaches it. This happened while deploying this
+patch.
+
+Tests: Chromium `navigation_check.js` (new, 20 checks: 10 at phone width and
+10 at desktop width). A song opens at `#/track/<id>` with the back arrow;
+Home lists arriving late don't pull you out; Explore is `#/explore`; Back
+from Explore returns to the song; the back arrow returns Home and closes the
+song page; Forward reopens it; reload keeps the song and Back then goes
+Home; no page errors.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

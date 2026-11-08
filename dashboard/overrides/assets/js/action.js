@@ -18,7 +18,76 @@ function removeContextMenu() {
     $("*").off("scroll.contextMenu")
 }
 
+// Patch 55 (#11): every page has its own URL (#/explore, #/track/<id>, ...)
+// and each page you open is a browser-history entry, so the browser's (or
+// phone's) Back steps back through the pages you opened instead of leaving
+// the dashboard for the Discord login page. The header's back arrow does the
+// same. Reloading keeps you on the page you were on.
+const staticPageRoutes = {
+    "main-page": "",
+    "no-history-found": "",
+    "explore-page": "explore",
+    "full-history-page": "history",
+    "cantus-page": "cantus",
+    "settings-page": "servers",
+    "user-settings-page": "settings",
+}
+var routerBusy = false // true while showing a page for Back/Forward/reload
+var routeExtras = {} // route -> what's needed to rebuild it (online playlists)
+var currentRouteDepth = 0 // how many pages deep the current history entry is
+var routerReady = false // URLs are only recorded once the page in the URL was reopened
+var currentPageId = null // the page last switched to (still fading in, perhaps)
+
+// The URL route of a page, or null for pages that never get a URL of their
+// own (bot-not-found, no-lyrics-found, ...).
+function routeForPage(pageId) {
+    if (pageId in staticPageRoutes) return staticPageRoutes[pageId]
+    const $page = $(`#${pageId}`)
+    const id = (prefix) => encodeURIComponent(pageId.slice(prefix.length))
+    if (pageId.startsWith("track-page-")) return $page.data("id") ? `track/${encodeURIComponent($page.data("id"))}` : null
+    if (pageId.startsWith("lyrics-page-")) return $page.data("track") ? `lyrics/${encodeURIComponent($page.data("track"))}` : null
+    if (pageId.startsWith("server-page-")) return `servers/${id("server-page-")}`
+    if (pageId.startsWith("playlist-page-")) return `playlist/${id("playlist-page-")}`
+    return null
+}
+
+function routeFromHash() {
+    return location.hash.replace(/^#\/?/, "")
+}
+
+// The page currently on show for a route, if it's still on the page.
+function findPageForRoute(route) {
+    let found = null
+    $(".main-container > .sections").each(function () {
+        if (this.id && this.id !== "no-history-found" && routeForPage(this.id) === route) {
+            found = this.id
+            return false
+        }
+    })
+    return found
+}
+
+// Records the page just opened as a new browser-history entry.
+function syncUrl(pageId) {
+    if (routerBusy || !routerReady) return
+    const route = routeForPage(pageId)
+    if (route === null) return
+    const cur = history.state && history.state.dash ? history.state : null
+    if (cur && cur.route === route) return
+    const url = route ? `#/${route}` : location.pathname + location.search
+    const state = { dash: true, route, depth: route ? (cur ? cur.depth + 1 : 1) : 0, extra: routeExtras[route] }
+    // The first page of a visit replaces the entry it was loaded on rather
+    // than stacking on top of it.
+    if (!cur) history.replaceState(state, "", url)
+    else history.pushState(state, "", url)
+    currentRouteDepth = state.depth
+}
+
 function backToLastPage() {
+    // Patch 55 (#11): the header's back arrow is the browser's Back.
+    if (history.state && history.state.dash && history.state.depth > 0) {
+        return history.back()
+    }
     let lastPage = pageStack.pop()
     let prePage = pageStack[pageStack.length - 1]
 
@@ -105,6 +174,13 @@ function changePage(page, stack = false, removeAfterPop = true) {
         $activeMenuBtn.addClass("active")
     }
 
+    // Patch 55 (#11): finish any half-done fade first. Opening a page while
+    // the arrow was still fading out (e.g. right after the Home lists
+    // loaded) used to leave the new page with no back arrow at all.
+    $backMainBtn.stop(true, true)
+    $headerBtn.stop(true, true)
+    currentPageId = page
+
     if (["main-page", "no-history-found"].includes(page)) {
         $backMainBtn.fadeOut(350, () => {
             $headerBtn.fadeIn(400)
@@ -141,6 +217,8 @@ function changePage(page, stack = false, removeAfterPop = true) {
     } else {
         $(`#${page}`).fadeIn(350)
     }
+
+    syncUrl(page)
 }
 
 function buildPlaylistHtml(dataId, playlist, type) {
@@ -1113,23 +1191,7 @@ $(document).ready(function () {
                     return changePage(pageName)
                 }
 
-                const dataId = $btn.data("id")
-                const playlist = player.playlists[dataId]
-                if (!playlist) return
-
-                const pageId = `playlist-page-${dataId}`
-                let playlistPage = $(document).find(`#${pageId}`)
-                if (playlistPage.length > 0) {
-                    $(`#${pageId}`).replaceWith(buildPlaylistHtml(dataId, playlist, "user-playlist"))
-                    return changePage(pageId, true, false)
-                }
-
-                $(".main-container").append(buildPlaylistHtml(dataId, playlist, "user-playlist"))
-                changePage(pageId, true, false)
-
-                if (playlist.tracks == undefined) {
-                    player.send({ op: "getPlaylist", playlistId: dataId })
-                }
+                openUserPlaylist($btn.data("id"))
             }
             return
         }
@@ -1175,22 +1237,14 @@ $(document).ready(function () {
                         type: "addToQueue",
                     })
                 } else {
-                    const pageId = `playlist-page-${cardId}`
-                    selectedPlaylistPayload = {
+                    openOnlinePlaylist({
                         id: cardId,
                         href: href,
                         name: $card.find(".title").text(),
                         description: $card.find(".description").text(),
                         thumbnail: $card.find("img").attr("src"),
                         type: "playlist",
-                    }
-                    player.send({
-                        op: "getTracks",
-                        query: selectedPlaylistPayload.href,
-                        callback: pageId,
                     })
-                    $(".main-container").append(buildPlaylistHtml(cardId, selectedPlaylistPayload, selectedPlaylistPayload.type))
-                    changePage(pageId, true)
                 }
             }
             return
@@ -1483,9 +1537,7 @@ $(document).ready(function () {
             const guildId = $targetSettings.data("id")
 
             if ($targetSettings.hasClass("access-server-settings")) {
-                $(".main-container").append(buildSettingPageHtml(guildId, { fields: {} }))
-                player.send({ op: "getSettings", guildId: guildId })
-                changePage(`server-page-${guildId}`, true, false)
+                openServerPage(guildId)
             }
             return
         }
@@ -1824,12 +1876,7 @@ $(document).ready(function () {
                 buildTrackPage(options.selectedtrackid)
                 break
             case "context-get-lyrics":
-                var track = decode(options.selectedtrackid)
-                var pageId = `lyrics-page-${$("[id^='lyrics-page-']").length}`
-                $(".main-container").append(buildLyricHtml(pageId, { title: track.title }))
-
-                op = { op: "getLyrics", title: track.title, callback: pageId }
-                changePage(pageId, true)
+                openLyricsPage(options.selectedtrackid)
                 break
             case "context-playlist-remove-track":
                 op = {
@@ -2144,8 +2191,150 @@ $(document).ready(function () {
         $("*").on("scroll.contextMenu", removeContextMenu)
     }
 
+    // Patch 55 (#11): the pages below can be opened straight from a URL
+    // (reload, Back/Forward), not just by clicking.
+    let pageSeq = 0 // unique page ids (counting existing pages reused an id once one was closed)
+
+    function openUserPlaylist(dataId) {
+        const playlist = player.playlists?.[dataId]
+        if (!playlist) return false
+
+        const pageId = `playlist-page-${dataId}`
+        if ($(`#${pageId}`).length > 0) {
+            $(`#${pageId}`).replaceWith(buildPlaylistHtml(dataId, playlist, "user-playlist"))
+            changePage(pageId, true, false)
+            return true
+        }
+
+        $(".main-container").append(buildPlaylistHtml(dataId, playlist, "user-playlist"))
+        changePage(pageId, true, false)
+
+        if (playlist.tracks == undefined) {
+            player.send({ op: "getPlaylist", playlistId: dataId })
+        }
+        return true
+    }
+
+    function openOnlinePlaylist(payload) {
+        if (!payload?.id || !payload.href) return false
+        const pageId = `playlist-page-${payload.id}`
+        selectedPlaylistPayload = payload
+        routeExtras[`playlist/${encodeURIComponent(payload.id)}`] = payload
+        $(`#${pageId}`).remove()
+        player.send({ op: "getTracks", query: payload.href, callback: pageId })
+        $(".main-container").append(buildPlaylistHtml(payload.id, payload, payload.type))
+        changePage(pageId, true)
+        return true
+    }
+
+    function openLyricsPage(trackId) {
+        const track = decode(trackId)
+        if (!track) return false
+        const pageId = `lyrics-page-${++pageSeq}`
+        $(".main-container").append(buildLyricHtml(pageId, { title: track.title }))
+        $(`#${pageId}`).attr("data-track", trackId)
+        player.send({ op: "getLyrics", title: track.title, callback: pageId })
+        changePage(pageId, true)
+        return true
+    }
+
+    function openServerPage(guildId) {
+        $(`#server-page-${guildId}`).remove()
+        $(".main-container").append(buildSettingPageHtml(guildId, { fields: {} }))
+        player.send({ op: "getSettings", guildId: guildId })
+        changePage(`server-page-${guildId}`, true, false)
+        return true
+    }
+
+    // Opens the page for a route that isn't on the page any more.
+    function openRoute(route, extra) {
+        const [kind, ...rest] = route.split("/")
+        const arg = rest.length ? decodeURIComponent(rest.join("/")) : ""
+        try {
+            switch (kind) {
+                case "explore": buildExplorePage(); return true
+                case "history": openFullHistory(player, player.fullHistory?.scope || "user"); return true
+                case "cantus": openCantusPage(player); return true
+                case "servers": return arg ? openServerPage(arg) : (build_server_page(), true)
+                case "settings": changePage("user-settings-page"); return true
+                case "track": return arg ? (buildTrackPage(arg), true) : false
+                case "lyrics": return arg ? openLyricsPage(arg) : false
+                case "playlist": return openUserPlaylist(arg) || openOnlinePlaylist(extra || routeExtras[route])
+            }
+        } catch (e) {
+            console.debug("Could not open", route, e)
+        }
+        return false
+    }
+
+    function showHome() {
+        const { guild, user } = player.homeHas || {}
+        changePage(guild === false && user === false ? "no-history-found" : "main-page")
+    }
+
+    function goHomeEntry() {
+        history.replaceState({ dash: true, route: "", depth: 0 }, "", location.pathname + location.search)
+        currentRouteDepth = 0
+    }
+
+    // Shows the page for a history entry (Back/Forward). The page you step
+    // back out of is closed, as the back arrow always did.
+    function showRoute(state) {
+        const leaving = currentPageId
+        const leavingDepth = currentRouteDepth
+        const route = state.route || ""
+        let shown = true
+        routerBusy = true
+        try {
+            if (!route) {
+                showHome()
+            } else {
+                const pageId = findPageForRoute(route)
+                if (pageId) changePage(pageId)
+                else shown = openRoute(route, state.extra)
+            }
+            if (!shown) showHome() // nothing to rebuild it from
+        } finally {
+            routerBusy = false
+        }
+        if (shown) currentRouteDepth = state.depth || 0
+        else goHomeEntry()
+
+        if (leaving && currentRouteDepth < leavingDepth && leaving !== currentPageId) {
+            const i = pageStack.findIndex((p) => p.pageId === leaving)
+            if (i >= 0) {
+                const [p] = pageStack.splice(i, 1)
+                if (p.removeAfterPop) $(`#${p.pageId}`).remove()
+            }
+        }
+    }
+
+    window.addEventListener("popstate", (e) => {
+        removeContextMenu()
+        closeAllModals()
+        const route = routeFromHash()
+        showRoute(e.state && e.state.dash ? e.state : { dash: true, route, depth: route ? currentRouteDepth + 1 : 0 })
+    })
+
+    // "#" links (e.g. Settings in the avatar menu) would add a bogus
+    // history entry.
+    $(document).on("click", 'a[href="#"]', (e) => e.preventDefault())
+
+    // Reload, or opened from a link: once the bot has answered, reopen the
+    // page in the URL with Home behind it, so Back still works.
+    let routeRestored = false
+    window.restoreRouteOnce = function () {
+        if (routeRestored) return
+        routeRestored = true
+        routerReady = true
+        const route = routeFromHash()
+        const saved = history.state && history.state.dash && history.state.route === route ? history.state : null
+        goHomeEntry()
+        if (route && !openRoute(route, saved?.extra)) goHomeEntry()
+    }
+
     function buildTrackPage(trackId) {
-        let trackPageId = `track-page-${$(".main-container").find('[id^="track-page"]').length}`
+        let trackPageId = `track-page-${++pageSeq}`
         let decodedTrack = decode(trackId)
 
         $trackPageHtml = $(`<div class="sections" id="${trackPageId}" data-id="${trackId}">

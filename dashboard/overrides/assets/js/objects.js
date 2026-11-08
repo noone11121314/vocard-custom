@@ -367,11 +367,15 @@ function setGuildNameLabels(guildName) {
 // based on whichever list has songs.
 function refreshHomePage(player) {
     const { guild, user } = player.homeHas;
+    // Patch 55 (#11): only switch pages while Home (or the "no bot" page) is
+    // on show. These lists can arrive seconds after the page loads, and used
+    // to yank you out of a song or playlist you'd already opened.
+    const onHome = !currentPageId || ["main-page", "no-history-found", "bot-not-found"].includes(currentPageId);
     if (guild === false && user === false) {
-        changePage("no-history-found");
+        if (onHome) changePage("no-history-found");
         return;
     }
-    if (guild || user) changePage("main-page");
+    if ((guild || user) && onHome) changePage("main-page");
     const elements = $(
         "#user-added-history-tracks, #user-history-tracks, #history-tracks-bot, #history-tracks-upload, #recommendation-tracks"
     ).find("[data-id]");
@@ -424,6 +428,9 @@ const methods = {
 
     initUser: function (player, data) {
         player.userId = data.userId;
+        // Patch 55 (#11): reopen the page in the URL (after a reload).
+        // Done after the playlists below are known.
+        setTimeout(() => window.restoreRouteOnce && window.restoreRouteOnce(), 0);
 
         // Patch 9: "Recently played"/"Trending" used to come from this one
         // user's own 25-track history cap (or, on Explore, a hardcoded demo
