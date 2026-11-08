@@ -281,6 +281,26 @@ class Player(VoiceProtocol):
     def autoplay(self) -> bool:
         """Indicates whether the player is set to autoplay."""
         return self.settings.get("autoplay", False)
+
+    async def set_autoplay(self, enabled: bool, *, refresh_controller: bool = True) -> None:
+        """Issue #10: the one place every autoplay toggle (controller button,
+        /autoplay, dashboard) goes through, so the controller button's on/off
+        state never goes stale. Starts a recommended song if nothing is playing."""
+        self.settings['autoplay'] = bool(enabled)
+        if refresh_controller:
+            await self.refresh_controller_view()
+        if not self.is_playing:
+            await self.do_next()
+
+    async def refresh_controller_view(self) -> None:
+        """Re-renders only the controller's buttons in place, without moving
+        or re-sending the controller message."""
+        if not self.controller or self._updating:
+            return
+        try:
+            await self.controller.edit(view=InteractiveController(self))
+        except (errors.NotFound, errors.Forbidden, errors.HTTPException):
+            pass
     
     @property
     def data(self) -> dict:

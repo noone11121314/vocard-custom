@@ -853,14 +853,12 @@ class Basic(commands.Cog):
             return await send_localized_message(ctx, "permissions.missingAutoPlay", ephemeral=True)
 
         check = not player.settings.get("autoplay", False)
-        player.settings['autoplay'] = check
         await send_localized_message(ctx, "player.controls.autoplay", await LangHandler.get_lang(ctx.guild.id, "common.status.enabled" if check else "common.status.disabled"))
 
-        if not player.is_playing:
-            await player.do_next()
-        
         if player.is_ipc_connected:
             await player.send_ws({"op": "toggleAutoplay", "status": check})
+
+        await player.set_autoplay(check)
 
     @commands.hybrid_command(name="help", aliases=get_aliases("help"))
     @app_commands.autocomplete(category=help_autocomplete)

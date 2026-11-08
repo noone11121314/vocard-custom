@@ -305,19 +305,28 @@ class VolumeMute(ControlButton):
         await interaction.response.edit_message(view=self.view)
 
 class AutoPlay(ControlButton):
+    # Issue #10: an on/off toggle. Configure it with "states": {"on": ..., "off": ...};
+    # a plain config without states still works (static look).
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(
+            default_states="on" if kwargs["player"].autoplay else "off",
+            **kwargs
+        )
     
     async def callback(self, interaction: discord.Interaction):
         if not self.player.is_privileged(interaction.user):
             return await self.send(interaction, "permissions.missingAutoPlay", ephemeral=True)
 
-        check = not self.player.settings.get("autoplay", False)
+        check = not self.player.autoplay
         self.player.settings['autoplay'] = check
+        self.change_states("on" if check else "off")
+        await interaction.response.edit_message(view=self.view)
         await self.send(interaction, 'player.controls.autoplay', await LangHandler.get_lang(interaction.guild_id, 'common.status.enabled' if check else "common.status.disabled"))
 
-        if not self.player.is_playing:
-            await self.player.do_next()
+        if self.player.is_ipc_connected:
+            await self.player.send_ws({"op": "toggleAutoplay", "status": check})
+
+        await self.player.set_autoplay(check, refresh_controller=False)
 
 class Shuffle(ControlButton):
     def __init__(self, **kwargs):

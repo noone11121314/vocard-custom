@@ -154,6 +154,21 @@
                 }
             },
             {
+                "autoplay": {
+                    "states": {
+                        "on": {
+                            "emoji": "📻",
+                            "label": "@@t_player.buttons.autoPlay@@",
+                            "style": "green"
+                        },
+                        "off": {
+                            "emoji": "📻",
+                            "label": "@@t_player.buttons.autoPlay@@"
+                        }
+                    }
+                }
+            },
+            {
                 "tracks": {
                     "label": "@@t_player.dropdown.trackSelect@@",
                     "max_options": 10

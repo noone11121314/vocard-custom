@@ -415,11 +415,8 @@ async def toggleAutoplay(player: Player, member: Member, data: Dict) -> Dict:
     if not await _is_privileged_fresh(player, member):
         return error_msg(player.get_msg('permissions.missingAutoPlay'))
 
-    check = data.get("status", False)
-    player.settings['autoplay'] = check
-
-    if not player.is_playing:
-        await player.do_next()
+    check = bool(data.get("status", False))
+    await player.set_autoplay(check)
 
     return {
         "op": "toggleAutoplay",
