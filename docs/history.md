@@ -117,3 +117,8 @@ own URL, so Back, Forward and reload behave as on any site, and Home's lists
 loading late no longer pull you out of a song (55, issue #11) - **v0.9.1**.
 The Discord controller's autoplay button (#10) was waiting on the staging
 bot at the time.
+
+**10 Nov - drag to scroll.** Dragging a song in the queue to the top or bottom
+of the screen now scrolls the list, faster near the edge, so a song can be
+moved a long way in one drag (56, issue #12) - **v0.9.2**. The old scrolling
+only kicked in within a thin strip at the edge of the list.

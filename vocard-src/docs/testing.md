@@ -141,7 +141,7 @@ It loads `.env` itself (companion secret, MongoDB login) and runs:
 | `dashboard/tests/run_sync_test.sh` | real `Player`/`Queue` code + two jsdom dashboards running the real dashboard JS | dashboards drifting out of sync with the bot; the page-reload rules |
 | `dashboard/tests/fuzz_sync.sh [seeds] [steps]` | same, with random multi-user sessions | the same, for sequences nobody thought to script |
 | `dashboard/tests/run_sync_test.sh` also runs `test_dashboard_user.py` | the dashboard server override, in the stock dashboard image | several tabs/devices per user (Patch 43) |
-| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin; a fake websocket plays the bot | a page broken only after minification or only in a real browser; the queue panel's History and Shuffle buttons (Patches 38-41); page URLs, Back/Forward/reload and the back arrow at phone and desktop width (`navigation_check.js`, Patch 55) |
+| `dashboard/tests/browser_check.sh` | real Chromium, JS minified with the dashboard's own jsmin; a fake websocket plays the bot | a page broken only after minification or only in a real browser; the queue panel's History and Shuffle buttons (Patches 38-41); page URLs, Back/Forward/reload and the back arrow at phone and desktop width (`navigation_check.js`, Patch 55); edge scrolling while dragging a queue song, mouse and touch (`drag_scroll_check.js`, Patch 56) |
 
 The integration suites (Patch 34):
 

@@ -2987,6 +2987,40 @@ Home; no page errors.
 
 ---
 
+## Patch 56 — Dragging a queue song to the top or bottom of the screen scrolls the list (issue #12)
+
+User: when dragging a song in the queue to the top or bottom of the screen,
+the list should scroll, so a song can be moved far quickly.
+
+Sortable.js's built-in edge scrolling only works inside a 30px strip at the
+very edge of the queue list's scroll box (`.queue-container .scrollbar`, not
+`.queue-container`, which never scrolls), and slowly. That box ends above the
+player bar and below the queue header, so dragging to the edge of the screen
+went past it and nothing scrolled. With a mouse, Sortable leaves scrolling to
+Chrome's native drag scrolling, which is just as limited.
+
+**Fix (objects.js):** `queueAutoScroll`, started from the queue Sortable's
+`onStart` and stopped in `onEnd` (Sortable's own `scroll` is off):
+- it follows the pointer through `drag`, `dragover`, `mousemove`,
+  `touchmove` and `pointermove` (capture, passive), ignoring the (0, 0)
+  some browsers send as a drag ends;
+- the zone is up to 100px (20% of the list's height) at the top and bottom;
+  speed rises from 120 px/s at the inner edge of the zone to 1400 px/s
+  (quadratic) at the list's edge, and stays at full speed anywhere past it,
+  up to the edge of the screen;
+- it waits until the pointer has moved 8px, so picking up a song near the
+  edge doesn't scroll at once;
+- it runs on a 16ms `setInterval`, not `requestAnimationFrame`: Chromium
+  doesn't run animation frames during a native (mouse) drag.
+
+Tests: Chromium `drag_scroll_check.js` (new, 11 checks): the speed curve; then
+with a mouse at desktop width and with touch (CDP touch events) at phone
+width: holding at the bottom of the screen scrolls down, the middle doesn't
+scroll, the drop moves the song far down, holding at the top of the screen
+scrolls up, no page errors.
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

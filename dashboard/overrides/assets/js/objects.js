@@ -387,6 +387,83 @@ function refreshHomePage(player) {
     }
 }
 
+// Patch 56 (#12): while a queue song is being dragged, holding it near the
+// top or bottom of the queue list scrolls the list - slowly at the inner edge
+// of the zone, faster the closer you get, and at full speed anywhere past the
+// list's edge (up to the edge of the screen). Works for mouse and touch.
+const queueAutoScroll = (() => {
+    const MAX_SPEED = 1400; // px per second, at or past the edge
+    const MIN_SPEED = 120; // px per second, where the zone starts
+    const START_MOVE = 8; // px the pointer must move first, so picking up a
+    //                       song near the edge doesn't scroll straight away
+    let scroller = null;
+    let y = null;
+    let startY = null;
+    let armed = false;
+    let timer = null;
+    let last = 0;
+
+    function pointerY(e) {
+        const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+        // Some browsers send a final dragover at (0, 0) as the drag ends.
+        if (typeof t.clientY !== "number" || (t.clientX === 0 && t.clientY === 0)) return null;
+        return t.clientY;
+    }
+
+    function onMove(e) {
+        const py = pointerY(e);
+        if (py === null) return;
+        y = py;
+        if (startY === null) startY = py;
+        if (!armed && Math.abs(py - startY) >= START_MOVE) armed = true;
+    }
+
+    // Signed px/second for pointer position py over a scroll box rect.
+    function speedFor(py, rect) {
+        const zone = Math.min(100, rect.height * 0.2);
+        const intoTop = py - rect.top;
+        const intoBottom = rect.bottom - py;
+        const ramp = (d) => (d <= 0 ? MAX_SPEED : MIN_SPEED + (MAX_SPEED - MIN_SPEED) * Math.pow(1 - d / zone, 2));
+        if (intoTop < zone && intoTop <= intoBottom) return -ramp(intoTop);
+        if (intoBottom < zone) return ramp(intoBottom);
+        return 0;
+    }
+
+    // A plain interval, not requestAnimationFrame: Chromium doesn't run
+    // animation frames during a native (mouse) drag.
+    function tick() {
+        if (!scroller) return;
+        const now = performance.now();
+        const dt = Math.min(0.05, (now - last) / 1000 || 0);
+        last = now;
+        if (armed && y !== null) {
+            const v = speedFor(y, scroller.getBoundingClientRect());
+            if (v) scroller.scrollTop += v * dt;
+        }
+    }
+
+    const EVENTS = ["drag", "dragover", "mousemove", "touchmove", "pointermove"];
+    return {
+        speedFor,
+        start() {
+            this.stop();
+            scroller = $("#queue").closest(".scrollbar")[0] || null;
+            if (!scroller) return;
+            y = startY = null;
+            armed = false;
+            EVENTS.forEach((ev) => document.addEventListener(ev, onMove, { capture: true, passive: true }));
+            last = performance.now();
+            timer = setInterval(tick, 16);
+        },
+        stop() {
+            EVENTS.forEach((ev) => document.removeEventListener(ev, onMove, { capture: true }));
+            if (timer) clearInterval(timer);
+            timer = null;
+            scroller = null;
+        },
+    };
+})();
+
 const methods = {
     // The bot left the dashboard (restart/redeploy). Patch 29: the dashboard
     // server never re-attaches already-open pages when the bot comes back,
@@ -699,6 +776,14 @@ const methods = {
             animation: 150,
             ghostClass: "sortable-ghost",
             chosenClass: "sortable-chosen",
+            // Patch 56 (#12): our own edge scrolling (queueAutoScroll) instead
+            // of Sortable's, which only worked inside a 30px strip at the very
+            // edge of the list's box and stopped once the finger or mouse
+            // went past it (onto the queue header or the player bar).
+            scroll: false,
+            onStart: function () {
+                queueAutoScroll.start();
+            },
             // Queue reordering is open to every member in the channel, not
             // just the DJ - see local-patches.md's Patch 8 (matches
             // moveTrack no longer requiring player.is_privileged() on the
@@ -706,6 +791,7 @@ const methods = {
             disabled: false,
 
             onEnd: function (evt) {
+                queueAutoScroll.stop();
                 let index = evt.oldIndex + 1;
                 let newIndex = evt.newIndex + 1;
                 if (index != newIndex) {
