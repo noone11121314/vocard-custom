@@ -24,6 +24,7 @@ SOFTWARE.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import time
@@ -62,6 +63,32 @@ URL_REGEX = re.compile(
 )
 
 NODE_VERSION = "v4"
+
+# Patch 57: Lavalink's YouTube search returns nothing at all when YouTube has
+# to fix the spelling ("three coppers over mozdoz"), while youtube.com shows
+# "Did you mean: three choppers over mozdok" and plays that. When a typed
+# YouTube search comes back empty, get_tracks asks youtube.com for its
+# correction and searches once more with it.
+_CORRECTED_QUERY_RE = re.compile(r'"correctedQuery":\{"runs":(\[.*?\])\}')
+_RETRY_ON_EMPTY = ("ytsearch:", "ytmsearch:")
+_YT_RESULTS_URL = "https://www.youtube.com/results"
+_YT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.8",
+}
+
+
+def parse_corrected_query(page: str) -> Optional[str]:
+    """Return YouTube's spelling correction from a results page, or None."""
+    match = _CORRECTED_QUERY_RE.search(page)
+    if not match:
+        return None
+    try:
+        runs = json.loads(match.group(1))
+    except ValueError:
+        return None
+    text = "".join(run.get("text", "") for run in runs if isinstance(run, dict)).strip()
+    return text or None
 
 class Node:
     """The base class for a node. 
@@ -363,7 +390,8 @@ class Node:
         query: str,
         *,
         requester: Member,
-        search_type: SearchType = None
+        search_type: SearchType = None,
+        _corrected: bool = False
     ) -> Union[List[Track], Playlist]:
         """
         Fetches tracks from the node's REST api to parse into Lavalink.
@@ -385,7 +413,20 @@ class Node:
             raise TrackLoadError("There was an error while trying to load this track.")
         
         elif load_type == "empty":
-            return None
+            # Patch 57: retry a typed YouTube search once with YouTube's own
+            # spelling correction, like youtube.com does.
+            prefix = next((p for p in _RETRY_ON_EMPTY if query.startswith(p)), None)
+            if _corrected or not prefix:
+                return None
+            text = query[len(prefix):]
+            corrected = await self.youtube_corrected_query(text)
+            if not corrected or corrected.casefold() == text.casefold():
+                return None
+            if self._logger:
+                self._logger.info(f"No results for {query!r}; searching YouTube's correction {corrected!r}")
+            return await self.get_tracks(
+                f"{prefix}{corrected}", requester=requester, search_type=search_type, _corrected=True
+            )
 
         elif load_type == "error":
             raise TrackLoadError(f"{data['message']} [{data['severity']}]")
@@ -399,6 +440,24 @@ class Node:
         elif load_type == "track":
             return [Track(track_id=data["encoded"], info=data["info"], requester=requester)]
     
+    async def youtube_corrected_query(self, text: str) -> Optional[str]:
+        """Patch 57: YouTube's "Did you mean" / "Showing results for" text
+        for a search, or None if it has none or youtube.com can't be reached."""
+        try:
+            async with self._session.get(
+                _YT_RESULTS_URL,
+                params={"search_query": text},
+                headers=_YT_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                return parse_corrected_query(await resp.text())
+        except Exception as e:
+            if self._logger:
+                self._logger.warning(f"YouTube spelling lookup failed: {e!r}")
+            return None
+
     async def resolve_direct_track(self, video_id: str, title: str = "") -> Optional[str]:
         """Resolves a direct, bot-detection-free stream URL for a YouTube video via
         invidious-companion, then asks Lavalink to build an http-source encoded

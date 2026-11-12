@@ -122,3 +122,9 @@ bot at the time.
 of the screen now scrolls the list, faster near the edge, so a song can be
 moved a long way in one drag (56, issue #12) - **v0.9.2**. The old scrolling
 only kicked in within a thin strip at the edge of the list.
+
+**12 Nov - spelling.** `\play three coppers over mozdoz` found nothing, though
+YouTube shows the song under "Did you mean: three choppers over mozdok". An
+empty YouTube search now asks YouTube for its correction and searches again
+(57, issue #13) - **v0.9.3**. It went straight to production; the autoplay
+button (#10) is still waiting on staging.

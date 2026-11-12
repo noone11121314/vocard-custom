@@ -3021,6 +3021,34 @@ scrolls up, no page errors.
 
 ---
 
+## Patch 57 — A misspelled search retries with YouTube's correction (issue #13)
+
+User: `\play three coppers over mozdoz` said no matching song was found, while
+YouTube shows the song. YouTube answers that search with "Did you mean: three
+choppers over mozdok" and results for the corrected wording, but Lavalink's
+YouTube search returns an empty result for it, and the bot gave up there.
+
+**Fix (voicelink/pool.py, `Node.get_tracks`):** when a `ytsearch:` or
+`ytmsearch:` search comes back empty, the bot loads youtube.com's results page
+for the same text (8s timeout), reads its `correctedQuery`, and searches once
+more with it, keeping the same prefix. It retries only once, and not when
+there is no correction or the correction is the same text. Links and other
+sources (SoundCloud, Spotify, ...) are unchanged. A failed lookup is logged as
+a warning and the search ends as before ("no matching song").
+
+Deployed straight to production as a bug fix. Production was built from the
+pre-#10 code plus this change, so the autoplay button (#10) is still only on
+staging; staging has both.
+
+Tests: unit `test_issue13_search_spelling.py` (13): reading the correction
+from a results page; an empty search retries with it and keeps `ytsearch:` /
+`ytmsearch:`; only one retry; no retry without a correction, with the same
+text, for links or for other sources; a failed lookup stays quiet. Live
+check through Lavalink: "three coppers over mozdoz" now finds "My yard - Three
+choppers over Mozdok".
+
+---
+
 ## Staging environment
 
 A second bot (`vocard-staging`, `docker-compose.staging.yml`) runs

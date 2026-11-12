@@ -17,6 +17,7 @@ grouped by topic instead.
 
 | Release | Date | Patches | Highlights |
 |---|---|---|---|
+| [v0.9.3](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.3) | 2026-11-12 | 57 (#13) | Fix: a misspelled search plays YouTube's corrected match instead of finding nothing |
 | [v0.9.2](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.2) | 2026-11-10 | 56 (#12) | Dragging a queue song to the top or bottom of the screen scrolls the list |
 | [v0.9.1](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.1) | 2026-11-08 | 55 (#11) | Fix: dashboard pages have URLs; Back steps back through them instead of to the login page |
 | [v0.9.0](https://github.com/noone11121314/vocard-custom/releases/tag/v0.9.0) | 2026-10-31 | 54 (#9) | Normal members remove their own songs, vote to remove others', and seek in their own song |
@@ -63,6 +64,9 @@ grouped by topic instead.
   measured and boosts capped so they can't clip. (10, 26)
 
 ## Playback
+- A misspelled search ("three coppers over mozdoz") plays YouTube's
+  corrected match ("three choppers over mozdok") instead of finding nothing.
+  (57, issue #13)
 - Skips can't get stuck any more: if a skip lands while a song is still
   starting and the music stops, the bot notices within seconds and plays the
   next song. The dashboard also re-checks a Next that isn't confirmed within
